@@ -1,5 +1,7 @@
 #include "types.h"
-
+#include "deck.h"
+#include <stdlib.h>  // srand, rand
+#include <time.h>    // time
 
 Card cards[60];
 
@@ -12,8 +14,6 @@ deck->cards[i * 15 + j] = (Card){i, j};
 deck->size = 60;
 deck->top = 0;
 }
-
-Deck unshuffledDeck = {cards, 0, 60};
 
 void shuffleDeck(Deck *deck){
 	srand(time(NULL));

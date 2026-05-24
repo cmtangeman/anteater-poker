@@ -8,7 +8,7 @@
 
 #define HAND_SIZE 2
 #define COMMUNITY_CARDS 5
-#define MAX_DECK_SIZE 52
+#define MAX_DECK_SIZE 60
 
 #define MAX_RANK_LEN 20
 #define MAX_SUIT_LEN 20
@@ -86,7 +86,7 @@ typedef enum {
 } HandRank;
 
 //
-   Structs
+  // Structs
 
 typedef struct {
     Suit suit;
