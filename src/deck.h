@@ -5,6 +5,13 @@
 
 void initializeDeck(Deck *deck);
 void shuffleDeck(Deck *deck);
+void resetDeck(Deck *deck);
+
+Card drawCard(Deck *deck);
+
+// Help with debugging
+void printCard(Card card);
+void printDeck(Deck *deck);
 
 #endif
 
