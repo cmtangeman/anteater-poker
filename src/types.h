@@ -26,7 +26,8 @@ typedef enum {
 } Suit;
 
 typedef enum {
-    TWO = 2,
+    ANT,	
+    TWO,
     THREE,
     FOUR,
     FIVE,
@@ -38,7 +39,8 @@ typedef enum {
     JACK,
     QUEEN,
     KING,
-    ACE
+    ACE,
+    Anteater
 } Rank;
 
 // Game state enums
