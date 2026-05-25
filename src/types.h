@@ -13,7 +13,7 @@
 #define MAX_RANK_LEN 20
 #define MAX_SUIT_LEN 20
 
-#define STARTING_CHIPS 1000
+#define STARTING_CHIPS 50
 
 
 // Card-related enums

@@ -32,6 +32,7 @@ void resetDeck(Deck *deck) {
 	shuffleDeck(deck); // Shuffle the deck
 }
 
+/*
 Card drawCard(Deck *deck) {
 	// No more cards left
 	if(deck->top >= deck->size) {
@@ -46,6 +47,7 @@ Card drawCard(Deck *deck) {
 	deck->top++;
 	return card;
 }
+*/
 
 void printCard(Card card) {
 	// Suit names

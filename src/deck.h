@@ -7,7 +7,7 @@ void initializeDeck(Deck *deck);
 void shuffleDeck(Deck *deck);
 void resetDeck(Deck *deck);
 
-Card drawCard(Deck *deck);
+// Card drawCard(Deck *deck); Using game.c verion
 
 // Help with debugging
 void printCard(Card card);

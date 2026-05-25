@@ -1,5 +1,7 @@
 #define MAX_HAND_RANGE 1770
 
+void botAction(Player *bot); 
+
 typedef struct {
     Card c1, c2;
     float weight;
