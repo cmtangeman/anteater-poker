@@ -6,6 +6,8 @@
 #include "rules.h"
 #define MIN_BET 1
 
+// This is for local testing only 
+
 void printCard(Card c);
 void printGameState(GameState *gameState);
 void printPlayerHand(GameState *gs, int playerIndex);
@@ -34,6 +36,8 @@ void printGameState(GameState *gameState) {
         printf("\n");
     }
 }
+
+// -> Eventually encapsulate main logic in here for local debugging void gameLoop(Player )
 
 ActionRequest getUserMove(GameState *gameState, int playerIndex){
     ActionRequest request;
