@@ -9,6 +9,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+
 /* #define DEBUG */	/* be verbose */
 
 /*** global variables ****************************************************/
@@ -66,12 +67,13 @@ int main(int argc, char *argv[])
     do
     {	printf("%s: Enter a command to send to the clock server:\n"
 		"         'TIME' to obtain the current time,\n"
+		"         'START' to login to your anteater poker accounnt and start playing,\n"
 		"         'BYE' to quit this client, or\n"
 		"         'SHUTDOWN' to terminate the server\n"
 		"command: ", argv[0]);
 	fgets(SendBuf, sizeof(SendBuf), stdin);
 	l = strlen(SendBuf);
-	if (SendBuf[l-1] == '\n')
+	if (SendBuf[l-1] == '\n');
 	{   SendBuf[--l] = 0;
 	}
 	if (0 == strcmp("BYE", SendBuf))
@@ -112,4 +114,4 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-/* EOF ClockClient.c */
+/* EOF poker_client.c */
