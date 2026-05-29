@@ -21,6 +21,10 @@ int playerFDS[FD_SETSIZE];
 int playerCount = 0;
 GameState gameState;
 
+const char *rankNames[] = {"Ant", "2", "3", "4", "5", "6", "7", "8", 
+                            "9", "10", "J", "Q", "K", "A", "Anteater"};
+const char *suitNames[] = {"Hearts", "Diamonds", "Clubs", "Spades"};
+
 typedef enum {
     STATE_CONNECTED,   
     STATE_LOBBY,      
@@ -42,6 +46,55 @@ char ClockBuffer[26]	/* current time in printable format */
 	= "";
 
 /*** global functions ****************************************************/
+void sendMsg(int fd, const char *msg)
+{   write(fd, msg, strlen(msg));
+}
+
+void sendPlayerStatus(GameState *gs, int playerIndex)
+{
+    char SendBuf[512];
+
+    snprintf(SendBuf, sizeof(SendBuf),
+        "YOUR STATUS:\n"
+        "Hand: %s of %s, %s of %s\n"
+        "Chips: $%d\n"
+        "Pot: $%d | Current Bet: $%d\n"
+        "1)Check 2)Call 3)Bet 4)Fold 5)AllIn\n",
+        rankNames[gs->players[playerIndex].hand[0].rank],
+        suitNames[gs->players[playerIndex].hand[0].suit],
+        rankNames[gs->players[playerIndex].hand[1].rank],
+        suitNames[gs->players[playerIndex].hand[1].suit],
+        gs->players[playerIndex].chips,
+        gs->pot,
+        gs->currentBet);
+
+    sendMsg(playerFDS[playerIndex], SendBuf);
+}
+
+int recvMsg(int fd, char *buf, int size)
+{   int n = read(fd, buf, size-1);
+    if (n > 0) buf[n] = 0;
+    return n;
+}
+
+void broadcastMessage(char *msg, int playerFDs[], int count)
+{
+    for (int i = 0; i < count; i++)
+    {   if (playerFDs[i] >= 0)
+        {   write(playerFDs[i], msg, strlen(msg));
+        }
+    }
+}
+
+int findSeat(int fd)
+{   for (int i = 0; i < playerCount; i++)
+    {   if (playerFDS[i] == fd) return i;
+    }
+    return -1;
+}
+
+void startPokerGame(void);
+void getEachBetNetwork(GameState *gs);
 
 void FatalError(		/* print error diagnostics and abort */
 	const char *ErrorMsg)
@@ -103,7 +156,7 @@ void PrintCurrentTime(void)	/*  print/update the current real time */
 int ProcessRequest(		/* process an input request by a client and return once done */
 	int DataSocketFD)
 {
-    int  l, n;
+    int  l, n, seat, startGame;
     char RecvBuf[256];	/* message buffer for receiving a message */
     char SendBuf[256];	/* message buffer for sending a response */
 
@@ -127,6 +180,16 @@ int ProcessRequest(		/* process an input request by a client and return once don
     }
     return 0;
     }
+    
+if (0 == strcmp(RecvBuf, "START"))
+{   strncpy(SendBuf, "ENTER YOUR NAME: ", sizeof(SendBuf)-1);
+
+    SendBuf[sizeof(SendBuf)-1] = 0;
+    l = strlen(SendBuf);
+    n = write(DataSocketFD, SendBuf, l);
+    clientStates[DataSocketFD] = STATE_LOBBY;
+    return 1;  /* keep open, wait for next message */
+}
     else if (0 == strcmp(RecvBuf, "SHUTDOWN"))
     {   Shutdown = 1;
 	strncpy(SendBuf, "OK SHUTDOWN", sizeof(SendBuf)-1);
@@ -155,38 +218,50 @@ int ProcessRequest(		/* process an input request by a client and return once don
     
     switch(clientStates[DataSocketFD])
     {
-        case STATE_CONNECTED:
-            // handle username input
-            // Joining lobby
-            strncpy(SendBuf, "ENTER YOUR NAME:", sizeof(SendBuf)-1);
-            SendBuf[sizeof(SendBuf)-1] = 0;
-            l = strlen(SendBuf);
-            n = write(DataSocketFD, SendBuf, l);
-            if (n < 0)
-            {   FatalError("writing to data socket failed");
-            }
-            
-            clientStates[DataSocketFD] = STATE_LOBBY;
-
-            break;
         case STATE_LOBBY:
-        
+
             strncpy(gameState.players[playerCount].username, RecvBuf,
             sizeof(gameState.players[0].username) - 1);
-            playerFDS[playerCount] = DataSocketFD;
+            seat = playerCount; 
             playerCount++;
-            snprintf(SendBuf, sizeof(SendBuf), "OK WELCOME %s", RecvBuf);
-            l = strlen(SendBuf);
-            n = write(DataSocketFD, SendBuf, l);
+            playerFDS[seat] = DataSocketFD;
+            printf("New player: %s at seat %d\n", gameState.players[seat].username, seat);
+            snprintf(SendBuf, sizeof(SendBuf), "Welcome %s Input READY to Ready up for game", RecvBuf);
+            sendMsg(DataSocketFD, SendBuf);
             clientStates[DataSocketFD] = STATE_PLAYING;
             break;
+
+
         case STATE_PLAYING:
-            strncpy(SendBuf, "PLAYING GAME NOW s", sizeof(SendBuf)-1);
-            SendBuf[sizeof(SendBuf)-1] = 0;
-            l = strlen(SendBuf);
-            n = write(DataSocketFD, SendBuf, l);
+            seat = findSeat(DataSocketFD);
+            if (0 == strcmp(RecvBuf, "READY"))
+            {   gameState.players[seat].ready = 1;
+                startGame =1;
+                for(int i = 0; i < playerCount; i++){
+                    if(gameState.players[i].ready != 1){
+                        startGame = 0;
+                        break;
+                    }
+
+                }
+
+
+
+                 if(startGame){
+                startPokerGame();
+                }
+                
+            }
+
+            else
+            {   sendMsg(DataSocketFD, "Input READY to begin game\n");
+            }
+
+
+
             break;
     }
+
     return 1;
 
 /*
@@ -315,3 +390,90 @@ int main(int argc, char *argv[])
 }
 
 /* EOF poker_server.c */
+
+
+
+
+
+// Networking Poker Logic: 
+
+
+void startPokerGame(void)
+{
+    int i, winner;
+    char SendBuf[256];
+
+    initializeGame(&gameState);
+
+    // Initialize the players with some money 
+    for(int j = 0; j < playerCount; j++){
+        gameState.players[j].chips = 20;
+    }
+
+    /* fill remaining seats with bots */
+    for (i = playerCount; i < MAX_PLAYERS; i++)
+    {   gameState.players[i].type = BOT_PLAYER;
+        snprintf(gameState.players[i].username, 
+                sizeof(gameState.players[i].username), "Bot %d", i);
+        printf("Bot %d initialized\n", i);
+    }
+    gameState.playerCount = MAX_PLAYERS;
+
+    /* broadcast game starting */
+    // broadcastMessage("Game starting!\n", playerFDS, playerCount);
+
+    
+    startRound(&gameState);
+
+    /* Preflop */
+    // broadcastMessage("--- PREFLOP ---\n", playerFDS, playerCount);
+    getEachBetNetwork(&gameState);
+    advancePhase(&gameState);
+
+}
+
+void getEachBetNetwork(GameState *gs)
+{
+    ActionRequest request;
+    char RecvBuf[256];
+    char SendBuf[256];
+    int i;
+    
+
+    for (i = 0; i < gs->playerCount; i++){
+    if (!canPlayerAct(gs, i)){
+        if (gs->players[i].type == HUMAN_PLAYER)
+            sendMsg(playerFDS[i], "You cannot act, skipping\n");
+        continue;
+    }
+        if (gs->players[i].type == HUMAN_PLAYER)
+        {   // Else player can act so lets send them their status
+            sendPlayerStatus(gs, i);  // server sends automatically
+            recvMsg(playerFDS[i], RecvBuf, sizeof(RecvBuf));  // then waits for action
+
+            int choice = atoi(RecvBuf);
+
+            if (choice == 1)      { request.action = ACTION_CHECK;  request.amount = 0; }
+            else if (choice == 2) { request.action = ACTION_CALL;   request.amount = 0; }
+            else if (choice == 3)
+            {   
+                recvMsg(playerFDS[i], RecvBuf, sizeof(RecvBuf));
+                request.action = ACTION_BET;
+                request.amount = atoi(RecvBuf);
+                // if (request.amount < MIN_BET) request.amount = MIN_BET;
+            }
+            else if (choice == 4) { request.action = ACTION_FOLD;   request.amount = 0; }
+            else                  { request.action = ACTION_ALL_IN; request.amount = 0; }
+
+            processAction(gs, i, request);
+        }
+        else
+        {   // Bot just does nothing for now
+            // TODO: Implement bot logic
+            printf("Bot %d checks.\n", i);
+            request.action = ACTION_CHECK;
+            request.amount = 0;
+            processAction(gs, i, request);
+        }
+    }
+}

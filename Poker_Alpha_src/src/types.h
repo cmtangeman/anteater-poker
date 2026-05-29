@@ -105,6 +105,7 @@ typedef struct {
 
     Card hand[HAND_SIZE];
 
+    int ready;
     int chips;
     int currentBet;
     int folded;

@@ -34,7 +34,7 @@ void initializePlayers(GameState *gameState) {
 
     for (i = 0; i < MAX_PLAYERS; i++) {
 
-        strcpy(gameState->players[i].username, "Player");
+        // strcpy(gameState->players[i].username, "Player %", i);
 
         gameState->players[i].chips = STARTING_CHIPS;
         gameState->players[i].currentBet = 0;

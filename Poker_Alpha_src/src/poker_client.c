@@ -64,37 +64,46 @@ int main(int argc, char *argv[])
     ServerAddress.sin_family = AF_INET;
     ServerAddress.sin_port = htons(PortNo);
     ServerAddress.sin_addr = *(struct in_addr*)Server->h_addr_list[0];
-    do
-    {	printf("%s: Enter a command to send to the clock server:\n"
+
+
+
+	// still in main, but before the do loop
+	SocketFD = socket(AF_INET, SOCK_STREAM, 0);
+	if (SocketFD < 0)
+	{   FatalError("socket creation failed");
+	}
+	if (connect(SocketFD, (struct sockaddr*)&ServerAddress,
+			sizeof(ServerAddress)) < 0)
+	{   FatalError("connecting to server failed");
+	}
+
+	// Initial Menu 
+	printf("%s: Enter a command to send to the clock server:\n"
 		"         'TIME' to obtain the current time,\n"
 		"         'START' to login to your anteater poker accounnt and start playing,\n"
 		"         'BYE' to quit this client, or\n"
 		"         'SHUTDOWN' to terminate the server\n"
 		"command: ", argv[0]);
+
+    do
+    {	
 	fgets(SendBuf, sizeof(SendBuf), stdin);
 	l = strlen(SendBuf);
-	if (SendBuf[l-1] == '\n');
+	if (SendBuf[l-1] == '\n')
 	{   SendBuf[--l] = 0;
 	}
 	if (0 == strcmp("BYE", SendBuf))
 	{   break;
 	}
 	if (l)
-	{   SocketFD = socket(AF_INET, SOCK_STREAM, 0);
-	    if (SocketFD < 0)
-	    {   FatalError("socket creation failed");
-	    }
-	    printf("%s: Connecting to the server at port %d...\n",
-			Program, PortNo);
-	    if (connect(SocketFD, (struct sockaddr*)&ServerAddress,
-			sizeof(ServerAddress)) < 0)
-	    {   FatalError("connecting to server failed");
-	    }
+	{   
+
 	    printf("%s: Sending message '%s'...\n", Program, SendBuf);
 	    n = write(SocketFD, SendBuf, l);
 	    if (n < 0)
 	    {   FatalError("writing to socket failed");
 	    }
+
 #ifdef DEBUG
 	    printf("%s: Waiting for response...\n", Program);
 #endif
@@ -104,13 +113,39 @@ int main(int argc, char *argv[])
 	    }
 	    RecvBuf[n] = 0;
 	    printf("%s: Received response: %s\n", Program, RecvBuf);
+
+		if (strstr(RecvBuf, "1)Check 2)Call 3)Bet 4)Fold 5)AllIn"))	// Haystack / needle function call
+		{   // Client drives two step sequence for bet amount
+			printf("Your choice: ");
+			fgets(SendBuf, sizeof(SendBuf), stdin);
+			l = strlen(SendBuf);
+			if (SendBuf[l-1] == '\n') SendBuf[--l] = 0;
+			n = write(SocketFD, SendBuf, l);
+
+			// if bet, also send amount 
+			if (strcmp(SendBuf, "3") == 0)
+			{   printf("Bet amount: ");
+				fgets(SendBuf, sizeof(SendBuf), stdin);
+				l = strlen(SendBuf);
+				if (SendBuf[l-1] == '\n') SendBuf[--l] = 0;
+				n = write(SocketFD, SendBuf, l);
+			}
+
+			// Read next response before continuing 
+			n = read(SocketFD, RecvBuf, sizeof(RecvBuf)-1);
+			if (n < 0) { FatalError("reading from socket failed"); }
+			RecvBuf[n] = 0;
+			printf("%s: Received response: %s\n", Program, RecvBuf);
+			continue;  
+		}				
 #ifdef DEBUG
 	    printf("%s: Closing the connection...\n", Program);
 #endif
-	    close(SocketFD);
+	   
 	}
     } while(0 != strcmp("SHUTDOWN", SendBuf));
     printf("%s: Exiting...\n", Program);
+	 close(SocketFD); // -> Keep the connection open! 
     return 0;
 }
 
