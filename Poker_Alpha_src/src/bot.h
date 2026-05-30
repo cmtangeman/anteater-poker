@@ -10,6 +10,9 @@ ActionRequest botAction(Player *bot, GameState *gs);
 
 ActionRequest easyMode(Player *bot, Card *all_cards, int card_count);
 
+ActionRequest medMode(Player *bot, Card *bot_cards, Card *comm_card, 
+    int comm_card_count);
+
 typedef struct {
     Card c1, c2;
     float weight;

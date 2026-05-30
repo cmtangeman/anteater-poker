@@ -1,5 +1,6 @@
 #include "bot.h"
 #include "rules.h"
+#include "bot_helper.h"
 
 #include <stdio.h>
 
@@ -17,8 +18,9 @@ ActionRequest botAction(Player *bot, GameState *gs) {
         all_cards[i] = gs->communityCards[i-HAND_SIZE];
     }
 
-    return easyMode(bot, all_cards, card_count);
-} 
+    // return easyMode(bot, all_cards, card_count);
+    return medMode(bot, bot->hand, gs->communityCards, gs->communityCardCount);
+}
 
 
 // Function that performs actions corresponding to the easy mode for the bot
@@ -55,10 +57,37 @@ ActionRequest easyMode(Player *bot, Card *all_cards, int card_count) {
 }
 
 
-// Function that erforms actions corresponding to the medium mode for the bot
-ActionRequest medMode(Player *bot) {
+// Function that performs actions corresponding to the medium mode for the bot
+ActionRequest medMode(Player *bot, Card *bot_cards, Card *comm_card, 
+    int comm_card_count) {
+
     ActionRequest ar;
-    
+    int opps_no;
+
+    // temp hard coded opp value
+    opps_no = 1;
+
+    // call the monte carlo function
+    EquityResult eq = monte_carlo(bot_cards, HAND_SIZE, comm_card, comm_card_count,
+        opps_no, 10000);
+
+    // if win rate above 90%, go all in
+    if(eq.win_probability > 0.9) {
+        ar.action = ACTION_ALL_IN;
+
+        bot->allIn = 1;
+    } else if(eq.win_probability > 0.7) {
+        ar.action = ACTION_RAISE;
+    } else if(eq.win_probability > 0.5) {
+        ar.action = ACTION_CALL;
+    } else {
+        ar.action = ACTION_FOLD;
+
+        bot->folded = 1;
+    }
+
+    ar.amount = bot->currentBet;
+
     return ar;
 }
 
