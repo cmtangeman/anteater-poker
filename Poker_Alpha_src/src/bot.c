@@ -3,14 +3,30 @@
 
 #include <stdio.h>
 
-// Boiler plate function that evaluates the value of a hand and then 
-// makes a move based on the value
-// Function will be replaced with better logic that tracks other player hand values
-ActionRequest botAction(Player *bot) {
+// Function that determines the actions of the bot in the poker game 
+ActionRequest botAction(Player *bot, GameState *gs) {
+    int i, card_count;
+
+    // set total no of cards to sum of hand size and community card count
+    card_count = HAND_SIZE + gs->communityCardCount;
+
+    // init the all_cards array to store all curret cards so that hand can be 
+    // evaluated 
+    Card all_cards[HAND_SIZE + COMMUNITY_CARDS] = {bot->hand[0], bot->hand[1]};
+    for(i=HAND_SIZE;i<card_count;i++) {
+        all_cards[i] = gs->communityCards[i-HAND_SIZE];
+    }
+
+    return easyMode(bot, all_cards, card_count);
+} 
+
+
+// Function that performs actions corresponding to the easy mode for the bot
+ActionRequest easyMode(Player *bot, Card *all_cards, int card_count) {
     ActionRequest ar;
 
     // go all in for strongest hand value
-    if(evaluateHand(bot->hand, HAND_SIZE) == 10) {
+    if(evaluateHand(all_cards, card_count) == 10) {
         // bot->currentBet = bot->chips;
         
         ar.action = ACTION_ALL_IN;
@@ -18,13 +34,13 @@ ActionRequest botAction(Player *bot) {
         bot->allIn = 1;
     }
     // if hand is strong, increase the bet amount
-    if(evaluateHand(bot->hand, HAND_SIZE) > 8) {
+    if(evaluateHand(all_cards, card_count) > 8) {
         // bot->currentBet = .8 * bot->chips;
 
         ar.action = ACTION_RAISE;
     
     // if hand value is mediocre, continue with the bet amount  
-    } else if(evaluateHand(bot->hand, HAND_SIZE) > 4) {
+    } else if(evaluateHand(all_cards, card_count) > 4) {
         ar.action = ACTION_CALL;
 
     // if hand value is poor, fold
@@ -36,7 +52,15 @@ ActionRequest botAction(Player *bot) {
     ar.amount = bot->currentBet;
 
     return ar;
-} 
+}
+
+
+// Function that erforms actions corresponding to the medium mode for the bot
+ActionRequest medMode(Player *bot) {
+    ActionRequest ar;
+    
+    return ar;
+}
 
 
 /*
@@ -60,7 +84,15 @@ int main() {
         0
     };
 
-    ActionRequest ar = botAction(&bot);
+    GameState gs;
+    Card c = {HEARTS, ANT};
+    gs.communityCards[0] = c;
+    gs.communityCards[1] = c;
+    gs.communityCards[2] = c;
+    gs.communityCards[3] = c;
+    gs.communityCards[4] = c;
+
+    ActionRequest ar = botAction(&bot, &gs);
     printf("%d %d\n", ar.action, ar.amount);
 }
 */

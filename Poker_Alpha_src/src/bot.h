@@ -6,7 +6,9 @@
 
 #define MAX_HAND_RANGE 1770
 
-ActionRequest botAction(Player *bot); 
+ActionRequest botAction(Player *bot, GameState *gs); 
+
+ActionRequest easyMode(Player *bot, Card *all_cards, int card_count);
 
 typedef struct {
     Card c1, c2;
