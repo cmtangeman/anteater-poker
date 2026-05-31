@@ -15,7 +15,6 @@ COMMON_SRC = \
 	$(SRC_DIR)/rules.c \
 	$(SRC_DIR)/deck.c \
 	$(SRC_DIR)/game.c \
-	$(SRC_DIR)/game_manager.c \
 	$(SRC_DIR)/board.c
 
 .PHONY: all test clean directories
