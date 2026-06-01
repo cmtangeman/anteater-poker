@@ -19,7 +19,18 @@ COMMON_SRC = \
 
 .PHONY: all test clean directories
 
-all: directories $(SERVER) $(CLIENT)
+SDL_FLAGS = $(shell sdl2-config --cflags --libs) -lSDL2_ttf
+
+GUI_CLIENT = $(BIN_DIR)/poker_client
+GUI_SERVER = $(BIN_DIR)/poker_server
+
+all: directories $(SERVER) $(CLIENT) $(GUI_CLIENT) $(GUI_SERVER)
+
+$(GUI_CLIENT): $(SRC_DIR)/gui.c | directories
+	$(CC) -Wall $(SDL_FLAGS) $(SRC_DIR)/gui.c -o $(GUI_CLIENT) -I$(SRC_DIR)
+
+$(GUI_SERVER): $(SRC_DIR)/gui_server.c | directories
+	$(CC) -Wall $(SDL_FLAGS) $(SRC_DIR)/gui_server.c -o $(GUI_SERVER) -I$(SRC_DIR)
 
 directories:
 	mkdir -p $(BIN_DIR)
