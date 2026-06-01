@@ -1,6 +1,9 @@
-/* ClockServer.c: simple TCP/IP server example with timeout support
+/* Gutted and reworked version of ClockServer.c: simple TCP/IP server example with timeout support
  * Author: Rainer Doemer, 5/15/23 (prior versions 2/17/15, 2/20/17)
+ Charlie Ta
  */
+
+// Todo, ensure program works with just one client and also only plays one game at a time
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,10 +24,12 @@ int playerFDS[FD_SETSIZE];
 int playerCount = 0;
 GameState gameState;
 
+// Char arrays to match up strings with enums
 const char *rankNames[] = {"Ant", "2", "3", "4", "5", "6", "7", "8", 
                             "9", "10", "J", "Q", "K", "A", "Anteater"};
 const char *suitNames[] = {"Hearts", "Diamonds", "Clubs", "Spades"};
 
+// Different client states that dictate what message tree to go down 
 typedef enum {
     STATE_CONNECTED,   
     STATE_LOBBY,      
@@ -46,9 +51,15 @@ char ClockBuffer[26]	/* current time in printable format */
 	= "";
 
 /*** global functions ****************************************************/
+
 void sendMsg(int fd, const char *msg)
 {   write(fd, msg, strlen(msg));
 }
+
+// This will send each turn and give the player all the info they need in one message
+// TODO: Instead of sending a message like this, update the gui terminal
+// Also update the button for bet for example to turn green, from red when
+// it wasnt the users turn
 
 void sendPlayerStatus(GameState *gs, int playerIndex)
 {
@@ -237,20 +248,16 @@ if (0 == strcmp(RecvBuf, "START"))
             if (0 == strcmp(RecvBuf, "READY"))
             {   gameState.players[seat].ready = 1;
                 startGame =1;
-                for(int i = 0; i < playerCount; i++){
+                for(int i = 0; i <= playerCount; i++){
                     if(gameState.players[i].ready != 1){
                         startGame = 0;
                         break;
                     }
 
                 }
-
-
-
-                 if(startGame){
+                if(startGame){
                 startPokerGame();
                 }
-                
             }
 
             else
