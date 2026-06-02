@@ -14,8 +14,7 @@ RULES_TEST = $(BIN_DIR)/test_rules
 COMMON_SRC = \
 	$(SRC_DIR)/rules.c \
 	$(SRC_DIR)/deck.c \
-	$(SRC_DIR)/game.c \
-	$(SRC_DIR)/board.c
+	$(SRC_DIR)/game.c 
 
 .PHONY: all test clean directories
 
