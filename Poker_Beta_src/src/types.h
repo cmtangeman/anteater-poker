@@ -110,6 +110,7 @@ typedef struct {
     int currentBet;
     int folded;
     int allIn;
+    int seat;
 
     PlayerType type;
 } Player;

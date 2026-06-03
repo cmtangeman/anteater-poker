@@ -9,6 +9,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+int gameLoop = 0;
 
 /* #define DEBUG */	/* be verbose */
 
@@ -61,9 +62,9 @@ int main(int argc, char *argv[])
 		Program, PortNo);
         exit(10);
     }
-    ServerAddress.sin_family = AF_INET;
-    ServerAddress.sin_port = htons(PortNo);
-    ServerAddress.sin_addr = *(struct in_addr*)Server->h_addr_list[0];
+    ServerAddress.sin_family = AF_INET;	// 
+    ServerAddress.sin_port = htons(PortNo);	// 
+    ServerAddress.sin_addr = *(struct in_addr*)Server->h_addr_list[0];	// 
 
 
 
@@ -77,25 +78,28 @@ int main(int argc, char *argv[])
 	{   FatalError("connecting to server failed");
 	}
 
-	// Initial Menu 
-	printf("%s: Enter a command to send to the clock server:\n"
-		"         'TIME' to obtain the current time,\n"
+
+	printf("%s: Enter a command to send to the anteater poker server! :\n"
 		"         'START' to login to your anteater poker accounnt and start playing,\n"
 		"         'BYE' to quit this client, or\n"
 		"         'SHUTDOWN' to terminate the server\n"
 		"command: ", argv[0]);
 
+
     do
     {	
+	
+	if(!gameLoop){
+	// Send msg based off of initial promp first
 	fgets(SendBuf, sizeof(SendBuf), stdin);
 	l = strlen(SendBuf);
-	if (SendBuf[l-1] == '\n')
+	if (SendBuf[l-1] == '\n')	// decrements and sets newline to null terminator so CHARLIE\n appears as just CHARLIE
 	{   SendBuf[--l] = 0;
 	}
 	if (0 == strcmp("BYE", SendBuf))
-	{   break;
+	{   break;	// Restart the Loop
 	}
-	if (l)
+	if (l)	// if its more than 0. 
 	{   
 
 	    printf("%s: Sending message '%s'...\n", Program, SendBuf);
@@ -103,19 +107,24 @@ int main(int argc, char *argv[])
 	    if (n < 0)
 	    {   FatalError("writing to socket failed");
 	    }
+		// Handle game state prompts 
+	}
+	}
 
-#ifdef DEBUG
-	    printf("%s: Waiting for response...\n", Program);
-#endif
-	    n = read(SocketFD, RecvBuf, sizeof(RecvBuf)-1);
-	    if (n < 0) 
-	    {   FatalError("reading from socket failed");
-	    }
-	    RecvBuf[n] = 0;
-	    printf("%s: Received response: %s\n", Program, RecvBuf);
 
-		if (strstr(RecvBuf, "1)Check 2)Call 3)Bet 4)Fold 5)AllIn"))	// Haystack / needle function call
+
+	// Read the response 
+	n = read(SocketFD, RecvBuf, sizeof(RecvBuf)-1);
+	if (n < 0) 
+	{   FatalError("reading from socket failed");
+	}
+	RecvBuf[n] = 0;
+	printf("%s: Received response: %s\n", Program, RecvBuf);
+
+
+	if (strstr(RecvBuf, "1)Check 2)Call 3)Bet 4)Fold 5)AllIn"))	// Haystack / needle function call
 		{   // Client drives two step sequence for bet amount
+		gameLoop = 1;
 			printf("Your choice: ");
 			fgets(SendBuf, sizeof(SendBuf), stdin);
 			l = strlen(SendBuf);
@@ -125,24 +134,24 @@ int main(int argc, char *argv[])
 			// if bet, also send amount 
 			if (strcmp(SendBuf, "3") == 0)
 			{   printf("Bet amount: ");
+			// Fgets 
 				fgets(SendBuf, sizeof(SendBuf), stdin);
 				l = strlen(SendBuf);
 				if (SendBuf[l-1] == '\n') SendBuf[--l] = 0;
 				n = write(SocketFD, SendBuf, l);
 			}
+				/*
+				n = read(SocketFD, RecvBuf, sizeof(RecvBuf)-1);
+				if (n < 0) 
+				{   FatalError("reading from socket failed");
+				}
+				RecvBuf[n] = 0;
+				printf("%s: Received response: %s\n", Program, RecvBuf);
+				*/
 
-			// Read next response before continuing 
-			n = read(SocketFD, RecvBuf, sizeof(RecvBuf)-1);
-			if (n < 0) { FatalError("reading from socket failed"); }
-			RecvBuf[n] = 0;
-			printf("%s: Received response: %s\n", Program, RecvBuf);
-			continue;  
-		}				
-#ifdef DEBUG
-	    printf("%s: Closing the connection...\n", Program);
-#endif
-	   
-	}
+		}	
+	// Loop back to send the response ->>
+
     } while(0 != strcmp("SHUTDOWN", SendBuf));
     printf("%s: Exiting...\n", Program);
 	 close(SocketFD); // -> Keep the connection open! 

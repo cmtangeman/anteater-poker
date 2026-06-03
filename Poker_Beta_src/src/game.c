@@ -67,7 +67,7 @@ void startRound(GameState *gameState) {
 
     dealPlayerCards(gameState);
 
-    gameState->currentTurn = gameState->dealerIndex + 1;
+    // gameState->currentTurn = gameState->dealerIndex + 1;
 
     if (gameState->currentTurn >= gameState->playerCount) {
         gameState->currentTurn = 0;
@@ -255,7 +255,7 @@ void checkPlayer(GameState *gameState, int playerIndex) {
     if (gameState->players[playerIndex].currentBet ==
         gameState->currentBet) {
 
-        printf("Player checked.\n");
+        printf(" %s  checked.\n", gameState->players[playerIndex].username);
     }
     else {
         printf("Player cannot check.\n");
@@ -267,6 +267,8 @@ void checkPlayer(GameState *gameState, int playerIndex) {
 void foldPlayer(GameState *gameState, int playerIndex) {
 
     gameState->players[playerIndex].folded = 1;
+    printf(" %s  folded.\n", gameState->players[playerIndex].username);
+    // gameState->playerCount = gameState->playerCount -1;
 }
 
 // precondition: take in game state and player index
@@ -280,6 +282,7 @@ void allInPlayer(GameState *gameState, int playerIndex) {
     if (amount > 0) {
         processBet(gameState, playerIndex, amount);
         gameState->players[playerIndex].allIn = 1;
+        printf(" %s  is all in.\n", gameState->players[playerIndex].username);
     }
 }
 
@@ -319,6 +322,7 @@ void processAction(GameState *gameState,
 void advancePhase(GameState *gameState) {
 
     resetBets(gameState);
+    gameState->currentTurn = 0; // Added by charlie
 
     if (gameState->phase == GAME_PREFLOP) {
         dealFlop(gameState);
@@ -340,7 +344,7 @@ void advancePhase(GameState *gameState) {
     }
 }
 
-// precondition: take in game state
+// precondition: take in game åstate
 // postcondition: return number of active players
 int countActivePlayers(GameState *gameState) {
 
