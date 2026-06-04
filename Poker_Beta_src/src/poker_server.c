@@ -326,6 +326,11 @@ int ProcessRequest(		/* process an input request by a client and return once don
             
             seat = findSeat(DataSocketFD);
 
+            if (seat != gameState.currentTurn) {
+                sendMsg(DataSocketFD, "Not your turn.\n");
+                return 1;
+            }
+
 
 
             if (choice == 1)      { request.action = ACTION_CHECK;  request.amount = 0; }
@@ -344,7 +349,60 @@ int ProcessRequest(		/* process an input request by a client and return once don
             processAction(&gameState, seat, request);   // update the board accordingly 
             actionsThisRound++;
 
+            // check for 1 remaining player
+            if (countActivePlayers(&gameState) == 1) {
+
+                int winner = -1; // didnt find winner still
+            
+                // check each player, for who is the only active remaining
+                for (int i = 0; i < gameState.playerCount; i++) {
+                    //who didnt fold
+                    if (!gameState.players[i].folded) {
+                        winner = i;
+                        break;
+                    }
+                }
+
+                // pot to winner
+                gameState.players[winner].chips += gameState.pot;
+
+                // create string for user and print out winner message
+                char buff[256];
+                snprintf(buff, sizeof(buff), "%s is the winner. Everyone else folded!\n", gameState.players[winner].username);
+                broadcastMessage(buff, playerFDS, playerCount);
+
+                endRound(&gameState, winner);
+                return 1;
+            }
+
             actionsThisRound += runBotActions(&gameState);
+
+                        // check for 1 remaining player
+            if (countActivePlayers(&gameState) == 1) {
+
+                int winner = -1; // didnt find winner still
+            
+                // check each player, for who is the only active remaining
+                for (int i = 0; i < gameState.playerCount; i++) {
+                    //who didnt fold
+                    if (!gameState.players[i].folded) {
+                        winner = i;
+                        break;
+                    }
+                }
+
+                // pot to winner
+                gameState.players[winner].chips += gameState.pot;
+
+                // create string for user and print out winner message
+                char buff[256];
+                snprintf(buff, sizeof(buff), "%s is the winner. Everyone else folded!\n", gameState.players[winner].username);
+                broadcastMessage(buff, playerFDS, playerCount);
+
+                endRound(&gameState, winner);
+                return 1;
+            }
+            // TODO: Make a helper function to check for a winner, instead of repeating twice.
 
             printf("Actions this round: %d / %d\n", actionsThisRound, countActivePlayers(&gameState));   
             // runBotActions(&gameState);
@@ -547,10 +605,14 @@ int runBotActions(GameState *gs)
     Card allCards[7];
     int cardCount;
 
+    int safety = 0; //prevent loop
     // keep processing until it's a human's turn or round ends 
     while (gs->players[gs->currentTurn].type == BOT_PLAYER
+           && !gs->players[gs->currentTurn].folded //only when not folded do something
+           && countActivePlayers(gs) > 1
            && gs->phase != GAME_OVER)
     {
+        safety++;
         
         cardCount = 0;
         allCards[cardCount++] = gs->players[gs->currentTurn].hand[0];
