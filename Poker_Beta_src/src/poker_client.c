@@ -83,18 +83,24 @@ int main(int argc, char *argv[])
 		"         'START' to login to your anteater poker accounnt and start playing,\n"
 		"         'BYE' to quit this client, or\n"
 		"         'SHUTDOWN' to terminate the server\n"
-		"command: ", argv[0]);
+		, argv[0]);
 
 
     do
     {	
 	
 	if(!gameLoop){
+
+	printf("command: ");   // moved command prompt here, fixing reprompt issue
 	// Send msg based off of initial promp first
 	fgets(SendBuf, sizeof(SendBuf), stdin);
 	l = strlen(SendBuf);
 	if (SendBuf[l-1] == '\n')	// decrements and sets newline to null terminator so CHARLIE\n appears as just CHARLIE
 	{   SendBuf[--l] = 0;
+	}
+
+	if (l == 0) {  // handle if user just inputed ENTER 
+		continue;
 	}
 	if (0 == strcmp("BYE", SendBuf))
 	{   break;	// Restart the Loop
@@ -117,6 +123,11 @@ int main(int argc, char *argv[])
 	n = read(SocketFD, RecvBuf, sizeof(RecvBuf)-1);
 	if (n < 0) 
 	{   FatalError("reading from socket failed");
+	}
+
+	if (n == 0) {
+		printf("%s: Server closed connection.\n", Program); // prevents "Recieved Resonse:" spam when server disconnection occurs
+		break;
 	}
 	RecvBuf[n] = 0;
 	printf("%s: Received response: %s\n", Program, RecvBuf);

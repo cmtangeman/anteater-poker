@@ -227,8 +227,10 @@ int ProcessRequest(		/* process an input request by a client and return once don
         }
 
         else
-        {
+        { // handle invalid input from user
+            sendMsg(DataSocketFD, "Invalid input. Please type START, or choose from the options available.\n");
             clientStates[DataSocketFD] = STATE_CONNECTED;
+            return 1;
     
         }
 
