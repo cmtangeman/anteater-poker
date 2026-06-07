@@ -49,8 +49,7 @@ void shuffle(Deck *d) {
 }
 
 // fn that fills in the rest of the community cards
-void complete_board(Card *community, int num_community,
-                    Deck *d,         Card *out_board) {
+void complete_board(Card *community, int num_community, Deck *d, Card *out_board) {
     // Copy known community cards
     for (int i = 0; i < num_community; i++)
         out_board[i] = community[i];
@@ -79,9 +78,8 @@ HandRank evaluate_with_known(Card *hole_cards, Card *board, int board_size) {
 }
 
 // main helper fn that utilizes all the above fns to do a monte carlo simulation
-EquityResult monte_carlo(Card *my_holes, int num_holes,
-    Card *community, int num_community,
-    int   num_opponents, int   num_simulations) {
+EquityResult monte_carlo(Card *my_holes, int num_holes, Card *community, 
+    int num_community, int num_opponents, int num_simulations) {
 
     Deck deck = build_remaining_deck(my_holes, num_holes, community, num_community);
 
@@ -132,6 +130,12 @@ EquityResult monte_carlo(Card *my_holes, int num_holes,
             losses++;
         }
     }
+
+    EquityResult er = {
+        .win_probability  = (float)wins   / num_simulations,
+        .tie_probability  = (float)ties   / num_simulations,
+        .loss_probability = (float)losses / num_simulations
+    };
 
     return (EquityResult){
         .win_probability  = (float)wins   / num_simulations,
