@@ -131,12 +131,6 @@ EquityResult monte_carlo(Card *my_holes, int num_holes, Card *community,
         }
     }
 
-    EquityResult er = {
-        .win_probability  = (float)wins   / num_simulations,
-        .tie_probability  = (float)ties   / num_simulations,
-        .loss_probability = (float)losses / num_simulations
-    };
-
     return (EquityResult){
         .win_probability  = (float)wins   / num_simulations,
         .tie_probability  = (float)ties   / num_simulations,
