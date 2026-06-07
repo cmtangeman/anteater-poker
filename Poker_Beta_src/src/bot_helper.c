@@ -1,6 +1,7 @@
 // Program file that serves helper functions for the bot.c file
 
 #include "bot_helper.h"
+#include <stdio.h>
 
 // card equivalence fn
 int card_eq(Card a, Card b) {

@@ -18,6 +18,12 @@ ActionRequest botAction(Player *bot, GameState *gs) {
         all_cards[i] = gs->communityCards[i-HAND_SIZE];
     }
 
+    // if no bet has been made yet, make a default bet
+    if(gs->currentBet == 0) {
+        ActionRequest ar = {ACTION_BET, BOT_BET_AMT};
+        return ar;
+    }
+
     // return easyMode(bot, all_cards, card_count);
     return medMode(bot, bot->hand, gs->communityCards, gs->communityCardCount);
 }
@@ -28,17 +34,13 @@ ActionRequest easyMode(Player *bot, Card *all_cards, int card_count) {
     ActionRequest ar;
 
     // go all in for strongest hand value
-    if(evaluateHand(all_cards, card_count) == 10) {
-        // bot->currentBet = bot->chips;
-        
+    if(evaluateHand(all_cards, card_count) == 9) {
+        ar.amount = bot->currentBet;    
         ar.action = ACTION_ALL_IN;
-
         bot->allIn = 1;
     }
     // if hand is strong, increase the bet amount
-    if(evaluateHand(all_cards, card_count) > 8) {
-        // bot->currentBet = .8 * bot->chips;
-
+    else if(evaluateHand(all_cards, card_count) > 7) {
         ar.action = ACTION_RAISE;
     
     // if hand value is mediocre, continue with the bet amount  
@@ -51,7 +53,7 @@ ActionRequest easyMode(Player *bot, Card *all_cards, int card_count) {
         ar.action = ACTION_FOLD;
     }
 
-    ar.amount = bot->currentBet;
+    ar = botAmtforAction(ar.action, bot->chips, bot->currentBet);
 
     return ar;
 }
@@ -64,12 +66,17 @@ ActionRequest medMode(Player *bot, Card *bot_cards, Card *comm_card,
     ActionRequest ar;
     int opps_no;
 
-    // temp hard coded opp value
+    // TEMP HARD-CODED OPP VALUE
+    // REPLACE WITH PLAYER COUNT
     opps_no = 1;
 
     // call the monte carlo function
     EquityResult eq = monte_carlo(bot_cards, HAND_SIZE, comm_card, comm_card_count,
         opps_no, 10000);
+    
+    // TEMP PRINT OF PROBS
+    // printf("win: %f; tie: %f; loss:%f\n", eq.win_probability, eq.tie_probability,
+    // eq.loss_probability);
 
     // if win rate above 90%, go all in
     if(eq.win_probability > 0.9) {
@@ -86,7 +93,66 @@ ActionRequest medMode(Player *bot, Card *bot_cards, Card *comm_card,
         bot->folded = 1;
     }
 
-    ar.amount = bot->currentBet;
+    ar = botAmtforAction(ar.action, bot->chips, bot->currentBet);
+
+    return ar;
+}
+
+// Function that returns the amt that is to to bet for the current action of the
+// bot
+ActionRequest botAmtforAction(PlayerAction action, int chips, int currentBet) {
+    ActionRequest ar;
+
+    switch(action) {
+        case ACTION_NONE:
+            ar.amount = 0;
+            ar.action = action;
+            break;
+        
+        case ACTION_CHECK:
+            ar.amount = 0;
+            ar.action = action;
+            break;
+
+        case ACTION_CALL:
+            if(currentBet >= chips) {
+                ar.amount = chips;
+                ar.action = ACTION_ALL_IN;
+            } else {
+                ar.action = action;
+                ar.amount = BOT_BET_AMT;
+            }
+            break;
+
+        case ACTION_BET:
+            ar.amount = BOT_BET_AMT;
+            ar.action = action;
+            break;
+        
+        case ACTION_RAISE:
+            if(currentBet >= chips) {
+                ar.amount = chips;
+                ar.action = ACTION_ALL_IN;
+            } else {
+                ar.action = action;
+                ar.amount = BOT_BET_AMT;
+            }
+            break;
+        
+        case ACTION_FOLD:
+            ar.amount = 0;
+            ar.action = action;
+            break;
+        
+        case ACTION_ALL_IN:
+            ar.amount = chips;
+            ar.action = action;
+            break;
+
+        default:
+            ar.action = ACTION_NONE;
+            ar.amount = 0;
+    }
 
     return ar;
 }
@@ -95,7 +161,7 @@ ActionRequest medMode(Player *bot, Card *bot_cards, Card *comm_card,
 /*
 // main for testing bot actions 
 int main() {
-    Player bot = {
+    Player bot1 = {
         "Bot1",
         {
             {
@@ -108,20 +174,46 @@ int main() {
             }
         },
         STARTING_CHIPS,
-        10,
+        20,
+        0,
+        0
+    };
+
+    Player bot2 = {
+        "Bot2",
+        {
+            {
+                HEARTS,
+                KING,
+            },
+            {
+                HEARTS,
+                JACK,
+            }
+        },
+        STARTING_CHIPS,
+        20,
         0,
         0
     };
 
     GameState gs;
-    Card c = {HEARTS, ANT};
-    gs.communityCards[0] = c;
-    gs.communityCards[1] = c;
-    gs.communityCards[2] = c;
-    gs.communityCards[3] = c;
-    gs.communityCards[4] = c;
+    Card c1 = {DIAMONDS, ANT};
+    Card c2 = {SPADES, ANT};
+    Card c3 = {CLUBS, ANT};
+    Card c4 = {HEARTS, TWO};
+    Card c5 = {HEARTS, THREE};
+    gs.communityCards[0] = c1;
+    gs.communityCards[1] = c2;
+    gs.communityCards[2] = c3;
+    gs.communityCards[3] = c4;
+    gs.communityCards[4] = c5;
 
-    ActionRequest ar = botAction(&bot, &gs);
-    printf("%d %d\n", ar.action, ar.amount);
+    gs.currentBet = BOT_BET_AMT;
+    gs.communityCardCount = 5;
+    ActionRequest ar1 = botAction(&bot1, &gs);
+    ActionRequest ar2 = botAction(&bot2, &gs);
+    printf("ar1: %d %d\n", ar1.action, ar1.amount);
+    printf("ar2: %d %d\n", ar2.action, ar2.amount);
 }
 */
