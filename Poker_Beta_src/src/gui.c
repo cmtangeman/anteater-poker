@@ -1,9 +1,14 @@
 /* EECS 22L Project 2 - Anteater Poker
  * GUI client (Team 18)
- * Connects to the team's text protocol, parses sendPlayerStatus blocks,
- * renders the table in SDL2, and sends 1-5 action codes back on click.
  *
- * Protocol expected from the server (see poker_server.c sendPlayerStatus):
+ * Interactive flow:
+ *   1. Connect to server
+ *   2. Click START → sends START to server
+ *   3. Server replies with name prompt → user types name + Enter (or SUBMIT)
+ *   4. Server replies Welcome → user clicks READY UP when lobby is full
+ *   5. Game proceeds
+ *
+ * Protocol parsed from sendPlayerStatus blocks:
  *   --- <PhaseName> ---
  *   [Community: <R> of <S>  <R> of <S>  ...]
  *   <name>'s STATUS:
@@ -35,12 +40,15 @@
 #define FONT_PATH "/usr/share/fonts/google-droid/DroidSans-Bold.ttf"
 #define WIN_W 1280
 #define WIN_H 720
-#define MY_NAME "Greg"
+#define NAME_MAX_LEN 32
 
 typedef enum {
-    HS_WAIT_NAME_PROMPT,
-    HS_WAIT_WELCOME,
-    HS_PLAYING
+    HS_PRE_START,          /* initial — show START button */
+    HS_WAIT_NAME_PROMPT,   /* sent START, waiting for "ENTER YOUR NAME:" */
+    HS_NAME_INPUT,         /* prompted for name, user typing */
+    HS_WAIT_WELCOME,       /* sent name, waiting for "Welcome..." */
+    HS_WELCOMED,           /* in lobby, show READY UP button */
+    HS_PLAYING             /* game in progress */
 } HandshakeState;
 
 typedef struct {
@@ -63,18 +71,16 @@ typedef struct {
 typedef struct {
     int x, y, w, h;
     const char *label;
-    int code;     /* 1-5 = server action codes; -1 = bet-, -2 = bet+ */
+    int code;
 } Button;
 
 static int g_sock = -1;
 
-/* Must match poker_server.c rankNames/suitNames exactly */
 static const char *rank_names_full[] = {
     "Ant","2","3","4","5","6","7","8","9","10","J","Q","K","A","Anteater"
 };
 static const char *suit_names_full[] = {"Hearts","Diamonds","Clubs","Spades"};
 
-/* Short labels for cards drawn on screen */
 static const char *rank_short(Rank r) {
     static const char *n[] = {
         "Ant","2","3","4","5","6","7","8","9","10","J","Q","K","A","ANT!"
@@ -219,7 +225,6 @@ static int connect_to_server(const char *hostname, int port) {
         close(s);
         return -1;
     }
-    /* Disable Nagle so the two-write BET sequence doesn't coalesce */
     int one = 1;
     setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
     fcntl(s, F_SETFL, O_NONBLOCK);
@@ -237,7 +242,6 @@ static void send_action(int code, int amount) {
     snprintf(buf, sizeof(buf), "%d", code);
     send_msg(buf);
     if (code == 3) {
-        /* Server does a 2nd blocking recvMsg() for the amount */
         SDL_Delay(80);
         snprintf(buf, sizeof(buf), "%d", amount);
         send_msg(buf);
@@ -309,13 +313,21 @@ static int hit(const Button *b, int mx, int my) {
 
 int main(int argc, char *argv[]) {
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s hostname port\n", argv[0]);
+        fprintf(stderr, "Usage: %s hostname port [name]\n", argv[0]);
         return 1;
     }
     int port = atoi(argv[2]);
     if (port <= 2000) {
         fprintf(stderr, "Invalid port %d (must be > 2000)\n", port);
         return 1;
+    }
+
+    /* Optional CLI name pre-fills the input field; user can still edit it. */
+    char name_buf[NAME_MAX_LEN] = {0};
+    int name_len = 0;
+    if (argc >= 4 && argv[3][0]) {
+        snprintf(name_buf, sizeof(name_buf), "%s", argv[3]);
+        name_len = strlen(name_buf);
     }
 
     g_sock = connect_to_server(argv[1], port);
@@ -326,7 +338,7 @@ int main(int argc, char *argv[]) {
     printf("[gui] Connected to %s:%d\n", argv[1], port);
     fflush(stdout);
 
-    send_msg("START");
+    /* NOTE: do NOT auto-send START. Wait for user to click START button. */
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
@@ -350,7 +362,8 @@ int main(int argc, char *argv[]) {
     TTF_Font *body_font  = TTF_OpenFont(FONT_PATH, 20);
     TTF_Font *card_font  = TTF_OpenFont(FONT_PATH, 18);
     TTF_Font *btn_font   = TTF_OpenFont(FONT_PATH, 18);
-    if (!title_font || !body_font || !card_font || !btn_font) {
+    TTF_Font *input_font = TTF_OpenFont(FONT_PATH, 32);
+    if (!title_font || !body_font || !card_font || !btn_font || !input_font) {
         fprintf(stderr, "TTF_OpenFont: %s\n", TTF_GetError());
         close(g_sock);
         return 1;
@@ -360,9 +373,9 @@ int main(int argc, char *argv[]) {
     memset(&gs, 0, sizeof(gs));
     gs.bet_amount = 1;
     snprintf(gs.status_msg, sizeof(gs.status_msg),
-             "Sent START - waiting for name prompt...");
+             "Connected. Click START to begin.");
 
-    HandshakeState hs = HS_WAIT_NAME_PROMPT;
+    HandshakeState hs = HS_PRE_START;
 
     /* Action button row at y=640. Codes 1-5 = server actions, -1/-2 = bet-/+ */
     Button buttons[7] = {
@@ -375,6 +388,14 @@ int main(int argc, char *argv[]) {
         { 970, 640,  40, 50, "+",     -2 }
     };
 
+    /* Pre-game overlay buttons */
+    Button start_button  = { (WIN_W - 360) / 2, 340, 360, 110, "START",     100 };
+    Button submit_button = { (WIN_W - 200) / 2, 470, 200,  60, "SUBMIT",    101 };
+    Button ready_button  = { (WIN_W - 360) / 2, 340, 360, 110, "READY UP!",  99 };
+
+    /* Name input field rect */
+    SDL_Rect name_input_rect = { (WIN_W - 500) / 2, 370, 500, 70 };
+
     int running = 1;
     while (running) {
         int mx = 0, my = 0;
@@ -383,10 +404,76 @@ int main(int argc, char *argv[]) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = 0;
-            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE)
-                running = 0;
+
+            if (e.type == SDL_KEYDOWN) {
+                if (e.key.keysym.sym == SDLK_ESCAPE) running = 0;
+                if (hs == HS_NAME_INPUT) {
+                    if (e.key.keysym.sym == SDLK_BACKSPACE && name_len > 0) {
+                        name_buf[--name_len] = 0;
+                    } else if (e.key.keysym.sym == SDLK_RETURN ||
+                               e.key.keysym.sym == SDLK_KP_ENTER) {
+                        if (name_len == 0) {
+                            snprintf(name_buf, sizeof(name_buf), "Player");
+                            name_len = strlen(name_buf);
+                        }
+                        send_msg(name_buf);
+                        hs = HS_WAIT_WELCOME;
+                        snprintf(gs.status_msg, sizeof(gs.status_msg),
+                                 "Sent name %s - waiting for welcome", name_buf);
+                        SDL_StopTextInput();
+                    }
+                }
+            }
+
+            if (e.type == SDL_TEXTINPUT && hs == HS_NAME_INPUT) {
+                const char *t = e.text.text;
+                int tlen = strlen(t);
+                /* Don't allow whitespace or control chars; keep name simple */
+                if (tlen > 0 && t[0] > ' ' && t[0] < 127) {
+                    if (name_len + tlen < (int)sizeof(name_buf) - 1) {
+                        memcpy(name_buf + name_len, t, tlen);
+                        name_len += tlen;
+                        name_buf[name_len] = 0;
+                    }
+                }
+            }
+
             if (e.type == SDL_MOUSEBUTTONDOWN &&
                 e.button.button == SDL_BUTTON_LEFT) {
+                /* START button (only in HS_PRE_START) */
+                if (hs == HS_PRE_START &&
+                    hit(&start_button, e.button.x, e.button.y)) {
+                    send_msg("START");
+                    hs = HS_WAIT_NAME_PROMPT;
+                    snprintf(gs.status_msg, sizeof(gs.status_msg),
+                             "Sent START - waiting for name prompt...");
+                    continue;
+                }
+                /* SUBMIT name button (only in HS_NAME_INPUT) */
+                if (hs == HS_NAME_INPUT &&
+                    hit(&submit_button, e.button.x, e.button.y)) {
+                    if (name_len == 0) {
+                        snprintf(name_buf, sizeof(name_buf), "Player");
+                        name_len = strlen(name_buf);
+                    }
+                    send_msg(name_buf);
+                    hs = HS_WAIT_WELCOME;
+                    snprintf(gs.status_msg, sizeof(gs.status_msg),
+                             "Sent name %s - waiting for welcome", name_buf);
+                    SDL_StopTextInput();
+                    continue;
+                }
+                /* READY UP button (only in HS_WELCOMED) */
+                if (hs == HS_WELCOMED &&
+                    hit(&ready_button, e.button.x, e.button.y)) {
+                    send_msg("READY");
+                    hs = HS_PLAYING;
+                    snprintf(gs.status_msg, sizeof(gs.status_msg),
+                             "Sent READY - waiting for game to start...");
+                    continue;
+                }
+                /* In-game action buttons (only in HS_PLAYING) */
+                if (hs != HS_PLAYING) continue;
                 for (int i = 0; i < 7; i++) {
                     if (!hit(&buttons[i], e.button.x, e.button.y)) continue;
                     int code = buttons[i].code;
@@ -418,15 +505,14 @@ int main(int argc, char *argv[]) {
             fflush(stdout);
 
             if (hs == HS_WAIT_NAME_PROMPT && strstr(netbuf, "NAME")) {
-                send_msg(MY_NAME);
-                hs = HS_WAIT_WELCOME;
+                hs = HS_NAME_INPUT;
+                SDL_StartTextInput();
                 snprintf(gs.status_msg, sizeof(gs.status_msg),
-                         "Sent name %s - waiting for welcome", MY_NAME);
+                         "Type your name and press Enter (or SUBMIT).");
             } else if (hs == HS_WAIT_WELCOME && strstr(netbuf, "Welcome")) {
-                send_msg("READY");
-                hs = HS_PLAYING;
+                hs = HS_WELCOMED;
                 snprintf(gs.status_msg, sizeof(gs.status_msg),
-                         "Ready! Waiting for game to start...");
+                         "In lobby - click READY UP when everyone has joined.");
             } else if (hs == HS_PLAYING) {
                 parse_server_text(&gs, netbuf);
             }
@@ -494,38 +580,99 @@ int main(int argc, char *argv[]) {
             draw_card_back(ren, WIN_W/2 - 80, 460);
             draw_card_back(ren, WIN_W/2 + 10, 460);
         }
-        char chipline[64];
-        snprintf(chipline, sizeof(chipline), "You (%s): $%d", MY_NAME,
-                 gs.my_chips);
+        char chipline[128];
+        snprintf(chipline, sizeof(chipline), "You (%s): $%d",
+                 name_buf[0] ? name_buf : "?", gs.my_chips);
         draw_text(ren, body_font, chipline, WIN_W/2 - 80, 570, white);
 
-        /* Turn indicator */
-        if (gs.my_turn) {
+        /* Turn indicator (only meaningful in HS_PLAYING) */
+        if (hs == HS_PLAYING && gs.my_turn) {
             int tw = 0, th = 0;
             TTF_SizeText(body_font, ">>> YOUR TURN <<<", &tw, &th);
             draw_text(ren, body_font, ">>> YOUR TURN <<<",
                       (WIN_W - tw)/2, 600, yel);
-        } else if (gs.in_game && !gs.round_over) {
+        } else if (hs == HS_PLAYING && gs.in_game && !gs.round_over) {
             int tw = 0, th = 0;
             TTF_SizeText(body_font, "Waiting for other players...", &tw, &th);
             draw_text(ren, body_font, "Waiting for other players...",
                       (WIN_W - tw)/2, 600, dim);
         }
 
-        /* Action buttons + bet amount widget */
-        for (int i = 0; i < 7; i++) {
-            int enabled = gs.my_turn;
-            int hover = hit(&buttons[i], mx, my);
-            draw_button(ren, btn_font, &buttons[i], enabled, hover);
+        /* Action buttons + bet amount widget (only visible in HS_PLAYING) */
+        if (hs == HS_PLAYING) {
+            for (int i = 0; i < 7; i++) {
+                int enabled = gs.my_turn;
+                int hover = hit(&buttons[i], mx, my);
+                draw_button(ren, btn_font, &buttons[i], enabled, hover);
+            }
+            char betline[24];
+            snprintf(betline, sizeof(betline), "$%d", gs.bet_amount);
+            int btw = 0, bth = 0;
+            TTF_SizeText(body_font, betline, &btw, &bth);
+            draw_text(ren, body_font, betline,
+                      930 - btw/2, 640 + (50 - bth)/2,
+                      gs.my_turn ? white : dim);
         }
-        /* Bet amount value sits between the "-" and "+" buttons */
-        char betline[24];
-        snprintf(betline, sizeof(betline), "$%d", gs.bet_amount);
-        int btw = 0, bth = 0;
-        TTF_SizeText(body_font, betline, &btw, &bth);
-        draw_text(ren, body_font, betline,
-                  930 - btw/2, 640 + (50 - bth)/2,
-                  gs.my_turn ? white : dim);
+
+        /* Pre-game state overlays */
+        if (hs == HS_PRE_START) {
+            const char *msg = "Click START to begin.";
+            int tw = 0, th = 0;
+            TTF_SizeText(body_font, msg, &tw, &th);
+            draw_text(ren, body_font, msg, (WIN_W - tw)/2, 300, white);
+            int hover = hit(&start_button, mx, my);
+            draw_button(ren, title_font, &start_button, 1, hover);
+        }
+        else if (hs == HS_WAIT_NAME_PROMPT) {
+            const char *msg = "Connecting to server...";
+            int tw = 0, th = 0;
+            TTF_SizeText(body_font, msg, &tw, &th);
+            draw_text(ren, body_font, msg, (WIN_W - tw)/2, 380, dim);
+        }
+        else if (hs == HS_NAME_INPUT) {
+            const char *msg = "Enter your name:";
+            int tw = 0, th = 0;
+            TTF_SizeText(body_font, msg, &tw, &th);
+            draw_text(ren, body_font, msg, (WIN_W - tw)/2, 330, white);
+
+            /* Input field background */
+            SDL_SetRenderDrawColor(ren, 25, 25, 30, 255);
+            SDL_RenderFillRect(ren, &name_input_rect);
+            SDL_SetRenderDrawColor(ren, 230, 230, 230, 255);
+            SDL_RenderDrawRect(ren, &name_input_rect);
+
+            /* Typed text */
+            int ix = name_input_rect.x + 14;
+            int iy = name_input_rect.y + 14;
+            int field_text_w = 0, field_text_h = 0;
+            if (name_buf[0]) {
+                draw_text(ren, input_font, name_buf, ix, iy, white);
+                TTF_SizeText(input_font, name_buf, &field_text_w, &field_text_h);
+            }
+            /* Blinking cursor */
+            if ((SDL_GetTicks() / 500) % 2 == 0) {
+                SDL_Rect cur = { ix + field_text_w + 2, iy, 3, 38 };
+                SDL_SetRenderDrawColor(ren, 230, 230, 230, 255);
+                SDL_RenderFillRect(ren, &cur);
+            }
+
+            int hover = hit(&submit_button, mx, my);
+            draw_button(ren, btn_font, &submit_button, 1, hover);
+        }
+        else if (hs == HS_WAIT_WELCOME) {
+            const char *msg = "Joining lobby...";
+            int tw = 0, th = 0;
+            TTF_SizeText(body_font, msg, &tw, &th);
+            draw_text(ren, body_font, msg, (WIN_W - tw)/2, 380, dim);
+        }
+        else if (hs == HS_WELCOMED) {
+            const char *waitmsg = "WAITING IN LOBBY";
+            int tw = 0, th = 0;
+            TTF_SizeText(body_font, waitmsg, &tw, &th);
+            draw_text(ren, body_font, waitmsg, (WIN_W - tw)/2, 300, yel);
+            int hover = hit(&ready_button, mx, my);
+            draw_button(ren, title_font, &ready_button, 1, hover);
+        }
 
         /* Status line at the bottom */
         draw_text(ren, body_font, gs.status_msg, 20, WIN_H - 28, white);
@@ -539,6 +686,7 @@ int main(int argc, char *argv[]) {
     TTF_CloseFont(body_font);
     TTF_CloseFont(card_font);
     TTF_CloseFont(btn_font);
+    TTF_CloseFont(input_font);
     TTF_Quit();
     SDL_DestroyRenderer(ren);
     SDL_DestroyWindow(win);
