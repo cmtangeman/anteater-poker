@@ -36,11 +36,11 @@ all: directories $(SERVER) $(CLIENT) $(GUI_CLIENT) $(GUI_SERVER)
 directories:
 >mkdir -p $(BIN_DIR)
 
-$(SERVER): $(SRC_DIR)/poker_server.c $(COMMON_SRC) | directories
->$(CC) $(CFLAGS) $(SRC_DIR)/poker_server.c $(COMMON_SRC) -o $(SERVER)
+$(SERVER): $(SRC_DIR)/poker_server_cli.c $(COMMON_SRC) | directories
+>$(CC) $(CFLAGS) $(SRC_DIR)/poker_server_cli.c $(COMMON_SRC) -o $(SERVER)
 
-$(CLIENT): $(SRC_DIR)/poker_client.c $(COMMON_SRC) | directories
->$(CC) $(CFLAGS) $(SRC_DIR)/poker_client.c $(COMMON_SRC) -o $(CLIENT)
+$(CLIENT): $(SRC_DIR)/poker_client_cli.c $(COMMON_SRC) | directories
+>$(CC) $(CFLAGS) $(SRC_DIR)/poker_client_cli.c $(COMMON_SRC) -o $(CLIENT)
 
 $(GUI_CLIENT): $(SRC_DIR)/gui.c | directories
 >$(CC) -Wall $(SDL_FLAGS) $(SRC_DIR)/gui.c -o $(GUI_CLIENT) -I$(SRC_DIR)
