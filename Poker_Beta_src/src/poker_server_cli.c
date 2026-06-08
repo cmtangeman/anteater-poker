@@ -28,6 +28,8 @@ int gameInProgress = 0;
 int actionsThisRound;
 GameState gameState;
 
+int playersThisPhase;
+
 int runBotActions(GameState *gs);
 
 // Char arrays to match up strings with enums
@@ -40,8 +42,7 @@ typedef enum {
     STATE_CONNECTED,   
     STATE_LOBBY,      
     STATE_PLAYING,
-    STATE_GAME,
-    STATE_BET_AMOUNT    
+    STATE_GAME  
 } ClientState;
 
 ClientState clientStates[FD_SETSIZE];   // Check state of each client depending on their FD
@@ -289,13 +290,16 @@ int ProcessRequest(		/* process an input request by a client and return once don
             startPokerGame();
             printf("Seat: %i playerFDS[seat] : %i ", seat, playerFDS[seat]);
             startRound(&gameState);
+            playersThisPhase = countActivePlayers(&gameState);
             actionsThisRound = 0;
             clientStates[DataSocketFD] = STATE_GAME;
             for (int j = 0; j < playerCount; j++)   // Set players who are waiting to be in game_State.
             clientStates[playerFDS[j]] = STATE_GAME;
             gameInProgress = 1;
             printf("%i", gameState.currentTurn);
-            sendPlayerStatus(&gameState, seat);
+
+            broadcastMessage("Game starting!\n", playerFDS, playerCount);
+            sendPlayerStatus(&gameState, gameState.currentTurn);
 
 
 
@@ -372,6 +376,7 @@ int ProcessRequest(		/* process an input request by a client and return once don
                 char buff[256];
                 snprintf(buff, sizeof(buff), "%s is the winner. Everyone else folded!\n", gameState.players[winner].username);
                 broadcastMessage(buff, playerFDS, playerCount);
+                gameInProgress = 0;
 
                 endRound(&gameState, winner);
                 return 1;
@@ -400,34 +405,39 @@ int ProcessRequest(		/* process an input request by a client and return once don
                 char buff[256];
                 snprintf(buff, sizeof(buff), "%s is the winner. Everyone else folded!\n", gameState.players[winner].username);
                 broadcastMessage(buff, playerFDS, playerCount);
-
                 endRound(&gameState, winner);
+                
                 return 1;
             }
             // TODO: Make a helper function to check for a winner, instead of repeating twice.
 
-            printf("Actions this round: %d / %d\n", actionsThisRound, countActivePlayers(&gameState));   
+            printf("Actions this round: %d / %d\n", actionsThisRound, playersThisPhase);   
             // runBotActions(&gameState);
-            if (actionsThisRound >= countActivePlayers(&gameState))
-            {   actionsThisRound = 0;
+            if (actionsThisRound >= playersThisPhase)       // To prevent folds from dynamically decreasing playersThisPhase
+            {   
+                
+                actionsThisRound = 0;
+                playersThisPhase = countActivePlayers(&gameState);
                 advancePhase(&gameState);
                 printf("Phase advanced to %d\n", gameState.phase);
                 // startRound(&gameState);
 
-                if (gameState.phase == GAME_SHOWDOWN)
-                {   int winner = determineWinner(&gameState);
-                    char buf[256];
-                    snprintf(buf, sizeof(buf), "Winner: %s!\n", 
-                            gameState.players[winner].username);
-                    broadcastMessage(buf, playerFDS, playerCount);
-                    endRound(&gameState, winner);
-                    return 0;
-                }
-                
+            if (gameState.phase == GAME_SHOWDOWN)
+            {
+                int winner = determineWinner(&gameState);
+                char buf[256];
+                snprintf(buf, sizeof(buf), "Winner: %s!\n", gameState.players[winner].username);
+                broadcastMessage(buf, playerFDS, playerCount);
+                endRound(&gameState, winner);
+                gameInProgress = 0;  // allow new game
+                for (int j = 0; j < playerCount; j++)
+                clientStates[playerFDS[j]] = STATE_CONNECTED;
+                broadcastMessage("Type START to play again.\n", playerFDS, playerCount);
+                return 1;  // keep sockets open
             }
-            
-
-
+                            
+            }
+        
 
             if (gameState.players[seat].type == HUMAN_PLAYER){
                 sendPlayerStatus(&gameState, gameState.currentTurn);
