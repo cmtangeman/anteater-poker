@@ -40,7 +40,7 @@
 #define FONT_PATH "/usr/share/fonts/google-droid/DroidSans-Bold.ttf"
 #define WIN_W 1280
 #define WIN_H 720
-#define NAME_MAX_LEN 32
+#define NAME_MAX_LEN 64
 
 typedef enum {
     HS_PRE_START,          /* initial — show START button */
@@ -66,6 +66,12 @@ typedef struct {
     int   round_over;
     int   bet_amount;
     char  status_msg[256];
+    /* Player roster — populated by server's "PLAYERS:" broadcast.
+     * Wire format expected: "PLAYERS:0:Greg\t1:Bob\t2:Bot 2\t...\n"
+     * Until that broadcast arrives, names default to "Bot N" placeholders. */
+    char  player_names[MAX_PLAYERS][NAME_MAX_LEN];
+    int   my_seat;          /* -1 if unknown */
+    int   roster_received;  /* 1 once a PLAYERS line has been parsed */
 } GuiState;
 
 typedef struct {
@@ -181,6 +187,35 @@ static void parse_server_text(GuiState *g, const char *buf) {
             sscanf(line, "Pot: $%d | Current Bet: $%d", &pot, &cur);
             g->pot = pot;
             g->current_bet = cur;
+        }
+        else if (strncmp(line, "PLAYERS:", 8) == 0) {
+            /* Format: PLAYERS:0:Greg\t1:Bob\t2:Bot 2\t...
+             * Tab-separated entries, each "<seat>:<name>". Name may contain
+             * spaces (e.g. "Bot 2") but not tabs. */
+            const char *q = line + 8;
+            while (*q) {
+                while (*q == '\t' || *q == ' ') q++;
+                if (!*q) break;
+                int seat = -1;
+                int consumed = 0;
+                if (sscanf(q, "%d:%n", &seat, &consumed) == 1) {
+                    q += consumed;
+                    char name[NAME_MAX_LEN] = {0};
+                    int nlen = 0;
+                    while (*q && *q != '\t' && nlen < NAME_MAX_LEN - 1) {
+                        name[nlen++] = *q++;
+                    }
+                    while (nlen > 0 && name[nlen-1] == ' ') name[--nlen] = 0;
+                    name[nlen] = 0;
+                    if (seat >= 0 && seat < MAX_PLAYERS && nlen > 0) {
+                        strncpy(g->player_names[seat], name, NAME_MAX_LEN - 1);
+                        g->player_names[seat][NAME_MAX_LEN - 1] = 0;
+                    }
+                } else {
+                    while (*q && *q != '\t') q++;
+                }
+            }
+            g->roster_received = 1;
         }
         else if (strstr(line, "1)Check")) {
             g->my_turn = 1;
@@ -372,6 +407,11 @@ int main(int argc, char *argv[]) {
     GuiState gs;
     memset(&gs, 0, sizeof(gs));
     gs.bet_amount = 1;
+    gs.my_seat = -1;
+    /* Placeholder labels until the server's PLAYERS broadcast arrives. */
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        snprintf(gs.player_names[i], NAME_MAX_LEN, "Bot %d", i);
+    }
     snprintf(gs.status_msg, sizeof(gs.status_msg),
              "Connected. Click START to begin.");
 
@@ -515,6 +555,16 @@ int main(int argc, char *argv[]) {
                          "In lobby - click READY UP when everyone has joined.");
             } else if (hs == HS_PLAYING) {
                 parse_server_text(&gs, netbuf);
+                /* Once the roster arrives, find our own seat by matching
+                 * the name we sent against the server's roster entries. */
+                if (gs.roster_received && gs.my_seat < 0) {
+                    for (int i = 0; i < MAX_PLAYERS; i++) {
+                        if (strcmp(gs.player_names[i], name_buf) == 0) {
+                            gs.my_seat = i;
+                            break;
+                        }
+                    }
+                }
             }
         } else if (n == 0) {
             printf("[gui] Server closed the connection.\n");
@@ -549,16 +599,23 @@ int main(int argc, char *argv[]) {
                  "Pot: $%d   Current Bet: $%d", gs.pot, gs.current_bet);
         draw_text(ren, body_font, potline, WIN_W - 320, 25, white);
 
-        /* Bots in a semicircle across the top */
-        int bot_xs[5] = {  60, 290, 570, 850, 1080 };
-        int bot_ys[5] = { 130, 100,  90, 100,  130 };
-        for (int i = 0; i < 5; i++) {
-            draw_card_back(ren, bot_xs[i], bot_ys[i]);
-            draw_card_back(ren, bot_xs[i] + 25, bot_ys[i] + 10);
-            char lbl[16];
-            snprintf(lbl, sizeof(lbl), "Bot %d", i + 1);
-            draw_text(ren, body_font, lbl, bot_xs[i] + 15, bot_ys[i] + 115,
-                      white);
+        /* Other players in a semicircle across the top.
+         * Five visible positions for the five seats that aren't ours.
+         * If we don't yet know our seat, assume 0 (the common case). */
+        int seat_xs[5] = {  60, 290, 570, 850, 1080 };
+        int seat_ys[5] = { 130, 100,  90, 100,  130 };
+        int self_seat = (gs.my_seat >= 0) ? gs.my_seat : 0;
+        int pos = 0;
+        for (int s = 0; s < MAX_PLAYERS && pos < 5; s++) {
+            if (s == self_seat) continue;
+            draw_card_back(ren, seat_xs[pos], seat_ys[pos]);
+            draw_card_back(ren, seat_xs[pos] + 25, seat_ys[pos] + 10);
+            int tw = 0, th = 0;
+            TTF_SizeText(body_font, gs.player_names[s], &tw, &th);
+            int lbl_x = seat_xs[pos] + (95 - tw) / 2;
+            draw_text(ren, body_font, gs.player_names[s], lbl_x,
+                      seat_ys[pos] + 115, white);
+            pos++;
         }
 
         /* Community cards centered */
