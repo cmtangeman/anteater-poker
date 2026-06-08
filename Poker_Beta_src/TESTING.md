@@ -6,7 +6,7 @@ The rules module is tested using src/test_rules.c.
 
 To run the tests:
 
-1. cd Poker_Alpha_src
+1. cd Poker_Beta_src
 2. make clean
 3. make
 4. make test
@@ -36,12 +36,23 @@ The expected result is:
 
 Passed 14/14 rules tests.
 
+## Makefile Test Commands
+
+The makefile also supports testing server, client, and gui:
+
+- make test_server
+- make test_client
+- make test_gui
+
 ## Build Verification
 
 The Makefile builds:
 
 - bin/server
 - bin/poker
+- bin/poker_client
+- bin/poker_server
 - bin/test_rules
+
 
 The project can be cleaned using make clean.

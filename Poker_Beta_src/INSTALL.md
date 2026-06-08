@@ -1,4 +1,4 @@
-Installation Instructions
+## Installation Instructions
 
 For the source package:
 1. Extract the archive:

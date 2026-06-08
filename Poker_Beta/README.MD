@@ -4,10 +4,10 @@ To learn more about the installation process, please see the intall file.
 Before running the game, you will need one of the ports in the UCI EECS servers.
 Make sure all users are using the same server (e.g. bondi)
 
-To run the game:
+## To run the game:
 
-Server: ./bin/poker_server (PORT)  <----- replace port with port number
-Client: ./bin/poker_client localhost (PORT) <----- replace port with port number
+    Server: ./bin/poker_server (PORT) <----- replace port with port number
+    Client: ./bin/poker_client localhost (PORT) <----- replace port with port number
 (MAKE SURE TO LAUNCH SERVER FIRST)
 
 For more information, refer to the User Manual document.
