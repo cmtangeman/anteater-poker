@@ -70,3 +70,12 @@ clean:
 >rm -rf $(BIN_DIR)
 >rm -f core
 >rm -f core.*
+
+test_server: directories $(SERVER_TEST)
+>./$(SERVER_TEST)
+
+test_client: directories $(CLIENT_TEST)
+>./$(CLIENT_TEST)
+
+test_gui: directories $(GUI_TEST)
+>./$(GUI_TEST)
