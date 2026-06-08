@@ -29,7 +29,7 @@ COMMON_SRC = \
 	$(SRC_DIR)/bot.c \
 	$(SRC_DIR)/bot_helper.c
 
-.PHONY: all test clean directories
+.PHONY: all test test-gui test-comm clean tar directories
 
 all: directories $(SERVER) $(CLIENT) $(GUI_CLIENT) $(GUI_SERVER)
 
@@ -64,6 +64,15 @@ test: directories $(RULES_TEST) $(CLIENT_TEST) $(SERVER_TEST) $(GUI_TEST)
 >./$(RULES_TEST)
 >./$(CLIENT_TEST)
 >./$(SERVER_TEST)
+>./$(GUI_TEST)
+
+test_server: directories $(SERVER_TEST)
+>./$(SERVER_TEST)
+
+test_client: directories $(CLIENT_TEST)
+>./$(CLIENT_TEST)
+
+test_gui: directories $(GUI_TEST)
 >./$(GUI_TEST)
 
 clean:
