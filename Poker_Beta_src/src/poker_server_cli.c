@@ -1,7 +1,7 @@
 /* Gutted and reworked version of ClockServer.c: simple TCP/IP server example with timeout support
  * Author: Rainer Doemer, 5/15/23 (prior versions 2/17/15, 2/20/17)
  Charlie Ta
- gcc bot_helper.c bot.c deck.c game.c rules.c poker_server.c -o poker_server_cli
+ gcc bot_helper.c bot.c deck.c game.c rules.c poker_server_cli.c -o poker_server_cli
  */
 
 // Todo, ensure program works with just one client and also only plays one game at a time
@@ -28,6 +28,8 @@ int gameInProgress = 0;
 int actionsThisRound;
 GameState gameState;
 
+int playersThisPhase;
+
 int runBotActions(GameState *gs);
 
 // Char arrays to match up strings with enums
@@ -40,8 +42,7 @@ typedef enum {
     STATE_CONNECTED,   
     STATE_LOBBY,      
     STATE_PLAYING,
-    STATE_GAME,
-    STATE_BET_AMOUNT    
+    STATE_GAME  
 } ClientState;
 
 ClientState clientStates[FD_SETSIZE];   // Check state of each client depending on their FD
@@ -289,13 +290,16 @@ int ProcessRequest(		/* process an input request by a client and return once don
             startPokerGame();
             printf("Seat: %i playerFDS[seat] : %i ", seat, playerFDS[seat]);
             startRound(&gameState);
+            playersThisPhase = countActivePlayers(&gameState);
             actionsThisRound = 0;
             clientStates[DataSocketFD] = STATE_GAME;
             for (int j = 0; j < playerCount; j++)   // Set players who are waiting to be in game_State.
             clientStates[playerFDS[j]] = STATE_GAME;
             gameInProgress = 1;
             printf("%i", gameState.currentTurn);
-            sendPlayerStatus(&gameState, seat);
+
+            broadcastMessage("Game starting!\n", playerFDS, playerCount);
+            sendPlayerStatus(&gameState, gameState.currentTurn);
 
 
 
@@ -319,34 +323,81 @@ int ProcessRequest(		/* process an input request by a client and return once don
             
             
             {
-            
-            
             // sendPlayerStatus(&gameState, findSeat(DataSocketFD));  -
             // recvMsg(playerFDS[DataSocketFD], RecvBuf, sizeof(RecvBuf));  // then waits for action
             // Can already read as we have processed above. 
             int choice = atoi(RecvBuf);
+            char move[24];
+            int bigBlind = 1;
+            int smallBlind = 0;
+            char buff[256];
+
             
             seat = findSeat(DataSocketFD);
 
+
+
+            // Handles all invalid input validation during moves
             if (seat != gameState.currentTurn) {
                 sendMsg(DataSocketFD, "Not your turn.\n");
                 return 1;
             }
 
+            // Handles  Big blind and little blind conditions 
+            if(gameState.phase == GAME_PREFLOP){
+            if((choice != ACTION_BET) && (smallBlind == seat)){
+                sendMsg(DataSocketFD, "You are small blind : you must bet this turn.");
+                sendPlayerStatus(&gameState, seat); // resend menu and try to get valid input 
+                return 1;
+            }
+            if (choice == ACTION_CHECK && seat == smallBlind) {
+                sendMsg(DataSocketFD, "You are small blind: you must call, raise, or fold.");
+                sendPlayerStatus(&gameState, seat);
+                return 1;
+            }
+            }
+
+            // Handles non raises after the big blind and the little blind 
+            
 
 
-            if (choice == 1)      { request.action = ACTION_CHECK;  request.amount = 0; }
-            else if (choice == 2) { request.action = ACTION_CALL;   request.amount = 0; }
+
+            if (choice == 1)      { 
+                request.action = ACTION_CHECK;  request.amount = 0; 
+                strcpy(move, "CHECKED");
+                }
+            else if (choice == 2) { 
+                strcpy(move, "CALLED");
+                request.action = ACTION_CALL;   request.amount = 0; }
             else if (choice == 3)
             {   
                 // Receive a 2nd Message
                 recvMsg(DataSocketFD, RecvBuf, sizeof(RecvBuf));
                 request.action = ACTION_BET;
                 request.amount = atoi(RecvBuf);
+
+                // Must Raise! 
+                if(request.amount < gameState.currentBet) {
+                sendMsg(DataSocketFD, "You must match or exceed the current bet.");
+                sendPlayerStatus(&gameState, seat);
+                return 1;
+            }   
+
+                // If Valid then proceed. 
+
+                snprintf(move, sizeof(move), "BET $%d", request.amount);
                 // if (request.amount < MIN_BET) request.amount = MIN_BET;
             }
-            else if (choice == 4) { request.action = ACTION_FOLD;   request.amount = 0; }
-            else                  { request.action = ACTION_ALL_IN; request.amount = 0; }
+            else if (choice == 4) { 
+                strcpy(move, "FOLDED");
+                request.action = ACTION_FOLD;   request.amount = 0; }
+            else                  { 
+                strcpy(move, "IS ALL IN!");
+                request.action = ACTION_ALL_IN; request.amount = 0; }
+
+
+            snprintf(buff, sizeof(buff), "%s %s\n", gameState.players[seat].username, move);
+            broadcastMessage(buff, playerFDS, playerCount);
 
             processAction(&gameState, seat, request);   // update the board accordingly 
             actionsThisRound++;
@@ -369,9 +420,9 @@ int ProcessRequest(		/* process an input request by a client and return once don
                 gameState.players[winner].chips += gameState.pot;
 
                 // create string for user and print out winner message
-                char buff[256];
                 snprintf(buff, sizeof(buff), "%s is the winner. Everyone else folded!\n", gameState.players[winner].username);
                 broadcastMessage(buff, playerFDS, playerCount);
+                gameInProgress = 0;
 
                 endRound(&gameState, winner);
                 return 1;
@@ -400,34 +451,39 @@ int ProcessRequest(		/* process an input request by a client and return once don
                 char buff[256];
                 snprintf(buff, sizeof(buff), "%s is the winner. Everyone else folded!\n", gameState.players[winner].username);
                 broadcastMessage(buff, playerFDS, playerCount);
-
                 endRound(&gameState, winner);
+                
                 return 1;
             }
             // TODO: Make a helper function to check for a winner, instead of repeating twice.
 
-            printf("Actions this round: %d / %d\n", actionsThisRound, countActivePlayers(&gameState));   
+            printf("Actions this round: %d / %d\n", actionsThisRound, playersThisPhase);   
             // runBotActions(&gameState);
-            if (actionsThisRound >= countActivePlayers(&gameState))
-            {   actionsThisRound = 0;
+            if (actionsThisRound >= playersThisPhase)       // To prevent folds from dynamically decreasing playersThisPhase
+            {   
+                
+                actionsThisRound = 0;
+                playersThisPhase = countActivePlayers(&gameState);
                 advancePhase(&gameState);
                 printf("Phase advanced to %d\n", gameState.phase);
                 // startRound(&gameState);
 
-                if (gameState.phase == GAME_SHOWDOWN)
-                {   int winner = determineWinner(&gameState);
-                    char buf[256];
-                    snprintf(buf, sizeof(buf), "Winner: %s!\n", 
-                            gameState.players[winner].username);
-                    broadcastMessage(buf, playerFDS, playerCount);
-                    endRound(&gameState, winner);
-                    return 0;
-                }
-                
+            if (gameState.phase == GAME_SHOWDOWN)
+            {
+                int winner = determineWinner(&gameState);
+                char buf[256];
+                snprintf(buf, sizeof(buf), "Winner: %s!\n", gameState.players[winner].username);
+                broadcastMessage(buf, playerFDS, playerCount);
+                endRound(&gameState, winner);
+                gameInProgress = 0;  // allow new game
+                for (int j = 0; j < playerCount; j++)
+                clientStates[playerFDS[j]] = STATE_CONNECTED;
+                broadcastMessage("Type START to play again.\n", playerFDS, playerCount);
+                return 1;  // keep sockets open
             }
-            
-
-
+                            
+            }
+        
 
             if (gameState.players[seat].type == HUMAN_PLAYER){
                 sendPlayerStatus(&gameState, gameState.currentTurn);
@@ -623,7 +679,16 @@ int runBotActions(GameState *gs)
         for (int j = 0; j < gs->communityCardCount; j++)
             allCards[cardCount++] = gs->communityCards[j];
 
-        request = easyMode(&gs->players[gs->currentTurn], allCards, cardCount);
+        // request = easyMode(&gs->players[gs->currentTurn], allCards, cardCount);
+        request = botAction(&gs->players[gs->currentTurn], gs, 2);
+
+        if (request.action == ACTION_CHECK && gs->currentBet > 0) {
+        request.action = ACTION_CALL;
+    }
+    if (request.action == ACTION_BET && request.amount < gs->currentBet) {
+        request.action = ACTION_CALL;
+        request.amount = gs->currentBet;
+    }
         processAction(gs, gs->currentTurn, request);
         botsActed++;
     }
