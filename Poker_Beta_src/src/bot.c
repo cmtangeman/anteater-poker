@@ -20,7 +20,7 @@ ActionRequest botAction(Player *bot, GameState *gs) {
 
     // if no bet has been made yet, make a default bet
     if(gs->currentBet == 0) {
-        ActionRequest ar = {ACTION_BET, BOT_BET_AMT};
+        ActionRequest ar = {ACTION_BET, MIN_BET};
         return ar;
     }
 
@@ -37,19 +37,17 @@ ActionRequest easyMode(Player *bot, Card *all_cards, int card_count) {
     if(evaluateHand(all_cards, card_count) == 9) {
         ar.amount = bot->currentBet;    
         ar.action = ACTION_ALL_IN;
-        bot->allIn = 1;
     }
     // if hand is strong, increase the bet amount
     else if(evaluateHand(all_cards, card_count) > 7) {
         ar.action = ACTION_RAISE;
     
     // if hand value is mediocre, continue with the bet amount  
-    } else if(evaluateHand(all_cards, card_count) > 4) {
+    } else if(evaluateHand(all_cards, card_count) > 2) {
         ar.action = ACTION_CALL;
 
     // if hand value is poor, fold
     } else {
-        bot->folded = 1;
         ar.action = ACTION_FOLD;
     }
 
@@ -68,7 +66,7 @@ ActionRequest medMode(Player *bot, Card *bot_cards, Card *comm_card,
 
     // TEMP HARD-CODED OPP VALUE
     // REPLACE WITH PLAYER COUNT
-    opps_no = 1;
+    opps_no = 6;
 
     // call the monte carlo function
     EquityResult eq = monte_carlo(bot_cards, HAND_SIZE, comm_card, comm_card_count,
@@ -82,7 +80,6 @@ ActionRequest medMode(Player *bot, Card *bot_cards, Card *comm_card,
     if(eq.win_probability > 0.9) {
         ar.action = ACTION_ALL_IN;
 
-        bot->allIn = 1;
     } else if(eq.win_probability > 0.7) {
         ar.action = ACTION_RAISE;
     } else if(eq.win_probability > 0.5) {
@@ -90,7 +87,6 @@ ActionRequest medMode(Player *bot, Card *bot_cards, Card *comm_card,
     } else {
         ar.action = ACTION_FOLD;
 
-        bot->folded = 1;
     }
 
     ar = botAmtforAction(ar.action, bot->chips, bot->currentBet);
