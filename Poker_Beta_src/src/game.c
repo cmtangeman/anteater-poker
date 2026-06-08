@@ -82,12 +82,11 @@ void startRound(GameState *gameState) {
    dealPlayerCards(gameState);
 
 
-   // gameState->currentTurn = gameState->dealerIndex + 1;
-
-
-   if (gameState->currentTurn >= gameState->playerCount) {
-       gameState->currentTurn = 0;
-   }
+   /* Simplified action order: always start with seat 0.
+    * (Standard poker rotates from the dealer, but seat 0 is reliably
+    * a human in our setup, which keeps the server's sendPlayerStatus
+    * targeting a real socket.) */
+   gameState->currentTurn = 0;
 
 
    if (canPlayerAct(gameState, gameState->currentTurn) == 0) {
@@ -551,12 +550,8 @@ void advancePhase(GameState *gameState) {
    }
 
 
-   gameState->currentTurn = gameState->dealerIndex + 1;
-
-
-   if (gameState->currentTurn >= gameState->playerCount) {
-       gameState->currentTurn = 0;
-   }
+   /* Match startRound: each phase also opens with seat 0. */
+   gameState->currentTurn = 0;
 
 
    if (canPlayerAct(gameState, gameState->currentTurn) == 0) {

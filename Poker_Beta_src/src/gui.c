@@ -72,6 +72,15 @@ typedef struct {
     char  player_names[MAX_PLAYERS][NAME_MAX_LEN];
     int   my_seat;          /* -1 if unknown */
     int   roster_received;  /* 1 once a PLAYERS line has been parsed */
+    /* TURN/ACTION feedback — populated by server's broadcasts.
+     * TURN:<name>  → highlights that seat
+     * ACTION:<name>:<verb>[:<amount>]  → appended to the action log */
+    char  current_turn[NAME_MAX_LEN];   /* who is acting right now */
+    char  action_log[10][128];          /* newest at [0]; older entries shifted down */
+    int   action_log_count;
+    /* Per-turn timer. Set to SDL_GetTicks() when a turn starts;
+     * 0 means no active turn timer (pre-game or between rounds). */
+    Uint32 turn_started_ms;
 } GuiState;
 
 typedef struct {
@@ -217,6 +226,56 @@ static void parse_server_text(GuiState *g, const char *buf) {
             }
             g->roster_received = 1;
         }
+        else if (strncmp(line, "TURN:", 5) == 0) {
+            /* "TURN:<name>" — set the current-turn highlight target. */
+            const char *q = line + 5;
+            while (*q == ' ' || *q == '\t') q++;
+            strncpy(g->current_turn, q, NAME_MAX_LEN - 1);
+            g->current_turn[NAME_MAX_LEN - 1] = 0;
+            int cl = (int)strlen(g->current_turn);
+            while (cl > 0 && g->current_turn[cl - 1] == ' ') {
+                g->current_turn[--cl] = 0;
+            }
+            /* New player is up — reset the per-turn countdown. */
+            g->turn_started_ms = SDL_GetTicks();
+        }
+        else if (strncmp(line, "ACTION:", 7) == 0) {
+            /* "ACTION:<username>:<verb>[:<amount>]"
+             * Display as "<username> <verb> [$<amount>]" in the log. */
+            const char *q = line + 7;
+            char username[NAME_MAX_LEN] = {0};
+            char verb[32] = {0};
+            int amount = 0;
+            int has_amount = 0;
+            int ulen = 0;
+            while (*q && *q != ':' && ulen < NAME_MAX_LEN - 1) {
+                username[ulen++] = *q++;
+            }
+            if (*q == ':') q++;
+            int vlen = 0;
+            while (*q && *q != ':' && vlen < 31) {
+                verb[vlen++] = *q++;
+            }
+            if (*q == ':') {
+                q++;
+                amount = atoi(q);
+                has_amount = 1;
+            }
+            char entry[128];
+            if (has_amount) {
+                snprintf(entry, sizeof(entry), "%s %s $%d",
+                         username, verb, amount);
+            } else {
+                snprintf(entry, sizeof(entry), "%s %s", username, verb);
+            }
+            /* Shift older entries down and insert newest at [0]. */
+            for (int i = 9; i > 0; i--) {
+                memcpy(g->action_log[i], g->action_log[i - 1], 128);
+            }
+            strncpy(g->action_log[0], entry, 127);
+            g->action_log[0][127] = 0;
+            if (g->action_log_count < 10) g->action_log_count++;
+        }
         else if (strstr(line, "1)Check")) {
             g->my_turn = 1;
             g->in_game = 1;
@@ -226,6 +285,9 @@ static void parse_server_text(GuiState *g, const char *buf) {
             if (g->bet_amount > g->my_chips) g->bet_amount = g->my_chips;
             if (g->bet_amount < 1) g->bet_amount = 1;
             snprintf(g->status_msg, sizeof(g->status_msg), "Your turn.");
+            /* Fallback if server hasn't broadcast TURN: yet — our own
+             * status block also marks the start of our turn. */
+            g->turn_started_ms = SDL_GetTicks();
         }
         else if (strstr(line, "is the winner") || strstr(line, "Winner:")) {
             g->my_turn = 0;
@@ -537,6 +599,20 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        /* Timer expiration: if it's our turn and 30s have elapsed,
+         * auto-act. CHECK if no outstanding bet; otherwise FOLD. */
+        if (hs == HS_PLAYING && gs.my_turn && gs.turn_started_ms > 0) {
+            Uint32 elapsed_ms = SDL_GetTicks() - gs.turn_started_ms;
+            if (elapsed_ms >= 30000) {
+                int auto_code = (gs.current_bet == 0) ? 1 : 4;
+                const char *verb = (auto_code == 1) ? "CHECK" : "FOLD";
+                send_action(auto_code, 0);
+                gs.my_turn = 0;
+                snprintf(gs.status_msg, sizeof(gs.status_msg),
+                         "Time's up - auto %s.", verb);
+            }
+        }
+
         char netbuf[4096];
         int n = read(g_sock, netbuf, sizeof(netbuf) - 1);
         if (n > 0) {
@@ -599,6 +675,25 @@ int main(int argc, char *argv[]) {
                  "Pot: $%d   Current Bet: $%d", gs.pot, gs.current_bet);
         draw_text(ren, body_font, potline, WIN_W - 320, 25, white);
 
+        /* Per-turn timer in the top-right corner (30s countdown).
+         * Only while it's actually your turn — avoids stale countdown
+         * lingering between rounds or during bot action. */
+        if (hs == HS_PLAYING && gs.my_turn && gs.turn_started_ms > 0) {
+            Uint32 elapsed_ms = SDL_GetTicks() - gs.turn_started_ms;
+            int remaining = 30 - (int)(elapsed_ms / 1000);
+            if (remaining < 0) remaining = 0;
+            char timer_str[16];
+            snprintf(timer_str, sizeof(timer_str), "%ds", remaining);
+            SDL_Color tc;
+            if (remaining > 10)      tc = (SDL_Color){100, 220, 100, 255};
+            else if (remaining > 5)  tc = (SDL_Color){230, 200,  60, 255};
+            else                     tc = (SDL_Color){240,  80,  80, 255};
+            int tw = 0, th = 0;
+            TTF_SizeText(input_font, timer_str, &tw, &th);
+            draw_text(ren, input_font, timer_str,
+                      WIN_W - tw - 20, 50, tc);
+        }
+
         /* Other players in a semicircle across the top.
          * Five visible positions for the five seats that aren't ours.
          * If we don't yet know our seat, assume 0 (the common case). */
@@ -608,13 +703,28 @@ int main(int argc, char *argv[]) {
         int pos = 0;
         for (int s = 0; s < MAX_PLAYERS && pos < 5; s++) {
             if (s == self_seat) continue;
+            /* Gold highlight box if this seat's player is the current turn. */
+            int is_current = (gs.current_turn[0] &&
+                              strcmp(gs.player_names[s], gs.current_turn) == 0);
+            if (is_current) {
+                SDL_SetRenderDrawColor(ren, 230, 200, 60, 255);
+                SDL_Rect hl1 = { seat_xs[pos] - 5, seat_ys[pos] - 5,
+                                 110, 145 };
+                SDL_RenderDrawRect(ren, &hl1);
+                SDL_Rect hl2 = { seat_xs[pos] - 4, seat_ys[pos] - 4,
+                                 108, 143 };
+                SDL_RenderDrawRect(ren, &hl2);
+            }
             draw_card_back(ren, seat_xs[pos], seat_ys[pos]);
             draw_card_back(ren, seat_xs[pos] + 25, seat_ys[pos] + 10);
             int tw = 0, th = 0;
             TTF_SizeText(body_font, gs.player_names[s], &tw, &th);
             int lbl_x = seat_xs[pos] + (95 - tw) / 2;
+            SDL_Color name_color = is_current
+                                   ? (SDL_Color){255, 235, 100, 255}
+                                   : white;
             draw_text(ren, body_font, gs.player_names[s], lbl_x,
-                      seat_ys[pos] + 115, white);
+                      seat_ys[pos] + 115, name_color);
             pos++;
         }
 
@@ -649,10 +759,35 @@ int main(int argc, char *argv[]) {
             draw_text(ren, body_font, ">>> YOUR TURN <<<",
                       (WIN_W - tw)/2, 600, yel);
         } else if (hs == HS_PLAYING && gs.in_game && !gs.round_over) {
+            char waitmsg[128];
+            if (gs.current_turn[0]) {
+                snprintf(waitmsg, sizeof(waitmsg),
+                         "Waiting for %s...", gs.current_turn);
+            } else {
+                snprintf(waitmsg, sizeof(waitmsg),
+                         "Waiting for other players...");
+            }
             int tw = 0, th = 0;
-            TTF_SizeText(body_font, "Waiting for other players...", &tw, &th);
-            draw_text(ren, body_font, "Waiting for other players...",
-                      (WIN_W - tw)/2, 600, dim);
+            TTF_SizeText(body_font, waitmsg, &tw, &th);
+            draw_text(ren, body_font, waitmsg, (WIN_W - tw)/2, 600, dim);
+        }
+
+        /* Recent-actions log — bottom-left area, newest at top */
+        if (gs.action_log_count > 0) {
+            int log_x = 20;
+            int log_y_start = 405;
+            draw_text(ren, body_font, "RECENT ACTIONS:",
+                      log_x, log_y_start - 25,
+                      (SDL_Color){200, 200, 220, 255});
+            int show_count = gs.action_log_count;
+            if (show_count > 5) show_count = 5;
+            for (int i = 0; i < show_count; i++) {
+                SDL_Color c = (i == 0)
+                              ? (SDL_Color){255, 235, 100, 255}
+                              : (SDL_Color){180, 180, 200, 255};
+                draw_text(ren, body_font, gs.action_log[i],
+                          log_x, log_y_start + i * 22, c);
+            }
         }
 
         /* Action buttons + bet amount widget (only visible in HS_PLAYING) */
