@@ -7,7 +7,7 @@
 #define MAX_HAND_RANGE 1770
 #define BOT_BET_AMT 5
 
-ActionRequest botAction(Player *bot, GameState *gs); 
+ActionRequest botAction(Player *bot, GameState *gs, int difficulty); 
 
 ActionRequest easyMode(Player *bot, Card *all_cards, int card_count);
 

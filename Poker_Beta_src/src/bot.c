@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 // Function that determines the actions of the bot in the poker game 
-ActionRequest botAction(Player *bot, GameState *gs) {
+ActionRequest botAction(Player *bot, GameState *gs, int difficulty) {
     int i, card_count;
 
     // set total no of cards to sum of hand size and community card count
@@ -24,8 +24,11 @@ ActionRequest botAction(Player *bot, GameState *gs) {
         return ar;
     }
 
-    // return easyMode(bot, all_cards, card_count);
-    return medMode(bot, bot->hand, gs->communityCards, gs->communityCardCount);
+    if(difficulty == 1) {
+        return easyMode(bot, all_cards, card_count);
+    } else if(difficulty == 2) {
+        return medMode(bot, bot->hand, gs->communityCards, gs->communityCardCount);
+    }
 }
 
 
@@ -43,7 +46,7 @@ ActionRequest easyMode(Player *bot, Card *all_cards, int card_count) {
         ar.action = ACTION_RAISE;
     
     // if hand value is mediocre, continue with the bet amount  
-    } else if(evaluateHand(all_cards, card_count) > 2) {
+    } else if(evaluateHand(all_cards, card_count) >= 1) {
         ar.action = ACTION_CALL;
 
     // if hand value is poor, fold
@@ -82,7 +85,7 @@ ActionRequest medMode(Player *bot, Card *bot_cards, Card *comm_card,
 
     } else if(eq.win_probability > 0.7) {
         ar.action = ACTION_RAISE;
-    } else if(eq.win_probability > 0.5) {
+    } else if(eq.win_probability > 0.2) {
         ar.action = ACTION_CALL;
     } else {
         ar.action = ACTION_FOLD;

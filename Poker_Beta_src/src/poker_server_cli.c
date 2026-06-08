@@ -679,7 +679,8 @@ int runBotActions(GameState *gs)
         for (int j = 0; j < gs->communityCardCount; j++)
             allCards[cardCount++] = gs->communityCards[j];
 
-        request = easyMode(&gs->players[gs->currentTurn], allCards, cardCount);
+        // request = easyMode(&gs->players[gs->currentTurn], allCards, cardCount);
+        request = botAction(&gs->players[gs->currentTurn], gs, 2);
 
         if (request.action == ACTION_CHECK && gs->currentBet > 0) {
         request.action = ACTION_CALL;
