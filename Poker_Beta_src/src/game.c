@@ -82,7 +82,7 @@ void startRound(GameState *gameState) {
    dealPlayerCards(gameState);
 
 
-   gameState->currentTurn = gameState->dealerIndex + 1;
+   // gameState->currentTurn = gameState->dealerIndex + 1;
 
 
    if (gameState->currentTurn >= gameState->playerCount) {

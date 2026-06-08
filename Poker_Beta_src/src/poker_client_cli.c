@@ -122,8 +122,8 @@ int main(int argc, char *argv[])
           && !strstr(RecvBuf, "ENTER YOUR NAME")
           && !strstr(RecvBuf, "Input READY")
           && !strstr(RecvBuf, "Welcome")
-		  && !strstr(RecvBuf, "START")); 
-
+		  && !strstr(RecvBuf, "START")
+          && !strstr(RecvBuf, "Type READY")); 
 	} 
 
 

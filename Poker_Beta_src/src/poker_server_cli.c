@@ -23,6 +23,7 @@
 #include "bot.h"
 
 int playerFDS[FD_SETSIZE];
+int playerPoints[FD_SETSIZE];
 int playerCount = 0;
 int gameInProgress = 0;
 int actionsThisRound;
@@ -112,6 +113,15 @@ void sendPlayerStatus(GameState *gs, int playerIndex)
     write(playerFDS[playerIndex], SendBuf, strlen(SendBuf));
 }
 
+void awardPoints(int winner, int chipsWon) {
+    int points;
+    if (chipsWon < 20)       points = 1;
+    else if (chipsWon < 40)  points = 2;
+    else                     points = 3;
+    
+    playerPoints[winner] += points;
+}
+
 int recvMsg(int fd, char *buf, int size)
 {   int n = read(fd, buf, size-1);
     if (n > 0) buf[n] = 0;
@@ -126,6 +136,42 @@ void broadcastMessage(char *msg, int playerFDs[], int count)
         }
     }
 }
+
+void broadcastLeaderboard() {
+    char buf[512] = "--- LEADERBOARD ---\n";
+    char line[64];
+    for (int i = 0; i < playerCount; i++) {
+        snprintf(line, sizeof(line), "%s: %d pts\n",
+            gameState.players[i].username, playerPoints[i]);
+        strncat(buf, line, sizeof(buf) - strlen(buf) - 1);
+    }
+    strncat(buf, "-------------------\n", sizeof(buf) - strlen(buf) - 1);
+    broadcastMessage(buf, playerFDS, playerCount);
+}
+
+  void broadcastAction(int seat, ActionRequest request) {
+      static const char *verbs[] = {
+          "NONE", "CHECK", "CALL", "BET", "RAISE", "FOLD", "ALL_IN"
+      };
+      const char *verb = (request.action >= 0 && (int)request.action < 7)
+                         ? verbs[request.action] : "?";
+      char buf[256];
+      if (request.action == ACTION_BET || request.action == ACTION_RAISE) {
+          snprintf(buf, sizeof(buf), "ACTION:%s:%s:%d\n",
+                   gameState.players[seat].username, verb, request.amount);
+      } else {
+          snprintf(buf, sizeof(buf), "ACTION:%s:%s\n",
+                   gameState.players[seat].username, verb);
+      }
+      broadcastMessage(buf, playerFDS, MAX_PLAYERS);
+  }
+
+    void broadcastTurn(void) {
+      char buf[128];
+      snprintf(buf, sizeof(buf), "TURN:%s\n",
+               gameState.players[gameState.currentTurn].username);
+      broadcastMessage(buf, playerFDS, MAX_PLAYERS);
+  }
 
 
 int findSeat(int fd)
@@ -193,6 +239,12 @@ int ProcessRequest(		/* process an input request by a client and return once don
     {   FatalError("reading from data socket failed");
     return 0;
     }
+    if (n == 0)  // n == 0 connection close by the other end ( EOF)
+    {   
+    printf("Client disconnected.\n");
+    return 0;  // closes the socket in ServerMainLoop
+    }
+    
     RecvBuf[n] = 0;
 
     if (0 == strcmp(RecvBuf, "SHUTDOWN"))
@@ -290,6 +342,7 @@ int ProcessRequest(		/* process an input request by a client and return once don
             startPokerGame();
             printf("Seat: %i playerFDS[seat] : %i ", seat, playerFDS[seat]);
             startRound(&gameState);
+            gameState.currentTurn = 0;
             playersThisPhase = countActivePlayers(&gameState);
             actionsThisRound = 0;
             clientStates[DataSocketFD] = STATE_GAME;
@@ -298,7 +351,9 @@ int ProcessRequest(		/* process an input request by a client and return once don
             gameInProgress = 1;
             printf("%i", gameState.currentTurn);
 
+
             broadcastMessage("Game starting!\n", playerFDS, playerCount);
+            broadcastTurn();
             sendPlayerStatus(&gameState, gameState.currentTurn);
 
 
@@ -344,23 +399,15 @@ int ProcessRequest(		/* process an input request by a client and return once don
             }
 
             // Handles  Big blind and little blind conditions 
-            if(gameState.phase == GAME_PREFLOP){
-            if((choice != ACTION_BET) && (smallBlind == seat)){
-                sendMsg(DataSocketFD, "You are small blind : you must bet this turn.");
-                sendPlayerStatus(&gameState, seat); // resend menu and try to get valid input 
-                return 1;
-            }
-            if (choice == ACTION_CHECK && seat == smallBlind) {
-                sendMsg(DataSocketFD, "You are small blind: you must call, raise, or fold.");
+        if (gameState.phase == GAME_PREFLOP) {
+            // Small blind can't check — they owe more
+            if (seat == smallBlind && choice == ACTION_CHECK) {
+                sendMsg(DataSocketFD, "You are small blind: you must call, bet, or fold.\n");
                 sendPlayerStatus(&gameState, seat);
                 return 1;
             }
-            }
-
-            // Handles non raises after the big blind and the little blind 
-            
-
-
+        }
+        
 
             if (choice == 1)      { 
                 request.action = ACTION_CHECK;  request.amount = 0; 
@@ -399,7 +446,9 @@ int ProcessRequest(		/* process an input request by a client and return once don
             snprintf(buff, sizeof(buff), "%s %s\n", gameState.players[seat].username, move);
             broadcastMessage(buff, playerFDS, playerCount);
 
+            broadcastAction(seat, request);
             processAction(&gameState, seat, request);   // update the board accordingly 
+            // broadcastTurn();
             actionsThisRound++;
 
             // check for 1 remaining player
@@ -415,6 +464,8 @@ int ProcessRequest(		/* process an input request by a client and return once don
                         break;
                     }
                 }
+
+                
 
                 // pot to winner
                 gameState.players[winner].chips += gameState.pot;
@@ -465,6 +516,8 @@ int ProcessRequest(		/* process an input request by a client and return once don
                 actionsThisRound = 0;
                 playersThisPhase = countActivePlayers(&gameState);
                 advancePhase(&gameState);
+                broadcastTurn();
+                
                 printf("Phase advanced to %d\n", gameState.phase);
                 // startRound(&gameState);
 
@@ -475,10 +528,21 @@ int ProcessRequest(		/* process an input request by a client and return once don
                 snprintf(buf, sizeof(buf), "Winner: %s!\n", gameState.players[winner].username);
                 broadcastMessage(buf, playerFDS, playerCount);
                 endRound(&gameState, winner);
-                gameInProgress = 0;  // allow new game
-                for (int j = 0; j < playerCount; j++)
-                clientStates[playerFDS[j]] = STATE_CONNECTED;
-                broadcastMessage("Type START to play again.\n", playerFDS, playerCount);
+                gameInProgress = 0;  
+                
+                int chipsWon = gameState.pot;
+                // gameState.players[winner].chips += chipsWon; -> Keep chips as 20, as not to get addicted to gamvling 
+                awardPoints(winner, chipsWon);
+                
+
+                // allow between friends
+                for (int j = 0; j < playerCount; j++){
+                clientStates[playerFDS[j]] = STATE_PLAYING;
+                }
+                broadcastLeaderboard();
+
+                broadcastMessage("Type READY to play again.\n", playerFDS, playerCount);
+
                 return 1;  // keep sockets open
             }
                             
@@ -654,6 +718,19 @@ void startPokerGame(void)
     gameState.playerCount = MAX_PLAYERS;
     
 
+    // FOR GUI 
+    char rosterBuf[512] = "PLAYERS:";
+      char rosterTmp[80];
+      for (int i = 0; i < MAX_PLAYERS; i++) {
+          snprintf(rosterTmp, sizeof(rosterTmp), "%s%d:%s",
+                   (i == 0) ? "" : "\t", i, gameState.players[i].username);
+          strncat(rosterBuf, rosterTmp,
+                  sizeof(rosterBuf) - strlen(rosterBuf) - 1);
+      }
+      strncat(rosterBuf, "\n", sizeof(rosterBuf) - strlen(rosterBuf) - 1);
+      broadcastMessage(rosterBuf, playerFDS, MAX_PLAYERS);
+
+
 }
 
 int runBotActions(GameState *gs)
@@ -667,6 +744,7 @@ int runBotActions(GameState *gs)
     // keep processing until it's a human's turn or round ends 
     while (gs->players[gs->currentTurn].type == BOT_PLAYER
            && !gs->players[gs->currentTurn].folded //only when not folded do something
+           && !gs->players[gs->currentTurn].allIn
            && countActivePlayers(gs) > 1
            && gs->phase != GAME_OVER)
     {
@@ -679,8 +757,9 @@ int runBotActions(GameState *gs)
         for (int j = 0; j < gs->communityCardCount; j++)
             allCards[cardCount++] = gs->communityCards[j];
 
-        // request = easyMode(&gs->players[gs->currentTurn], allCards, cardCount);
-        request = botAction(&gs->players[gs->currentTurn], gs, 2);
+        
+        request = easyMode(&gs->players[gs->currentTurn], allCards, cardCount);
+        
 
         if (request.action == ACTION_CHECK && gs->currentBet > 0) {
         request.action = ACTION_CALL;
@@ -689,7 +768,10 @@ int runBotActions(GameState *gs)
         request.action = ACTION_CALL;
         request.amount = gs->currentBet;
     }
+
+        broadcastAction(gs->currentTurn, request);
         processAction(gs, gs->currentTurn, request);
+        broadcastTurn();
         botsActed++;
     }
 
