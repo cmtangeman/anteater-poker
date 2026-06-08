@@ -36,11 +36,11 @@ $(GUI_SERVER): $(SRC_DIR)/gui_server.c | directories
 directories:
 	mkdir -p $(BIN_DIR)
 
-$(SERVER): $(SRC_DIR)/poker_server.c $(COMMON_SRC) | directories
-	$(CC) $(CFLAGS) $(SRC_DIR)/poker_server.c $(COMMON_SRC) -o $(SERVER)
+$(SERVER): $(SRC_DIR)/poker_server_cli.c $(COMMON_SRC) | directories
+	$(CC) $(CFLAGS) $(SRC_DIR)/poker_server_cli.c $(COMMON_SRC) -o $(SERVER)
 
-$(CLIENT): $(SRC_DIR)/poker_client.c $(COMMON_SRC) | directories
-	$(CC) $(CFLAGS) $(SRC_DIR)/poker_client.c $(COMMON_SRC) -o $(CLIENT)
+$(CLIENT): $(SRC_DIR)/poker_client_cli.c $(COMMON_SRC) | directories
+	$(CC) $(CFLAGS) $(SRC_DIR)/poker_client_cli.c $(COMMON_SRC) -o $(CLIENT)
 
 $(RULES_TEST): $(SRC_DIR)/test_rules.c $(SRC_DIR)/rules.c $(SRC_DIR)/rules.h $(SRC_DIR)/types.h | directories
 	$(CC) $(CFLAGS) $(SRC_DIR)/test_rules.c $(SRC_DIR)/rules.c -o $(RULES_TEST)
